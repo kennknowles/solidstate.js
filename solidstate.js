@@ -135,10 +135,12 @@ define([
                         // If an object is already here, it won't be a string or number and we are OK with that
                         if ( _(val).isString() || _(val).isNumber() ) {
                             var found = models[val];
-                            if ( found && !( _(found).has('state') && (found.state() !== 'ready') ) ) { // Do not add unready models for now; doable but omg complex on the UI
-                                foundAttributes[field] = w(found); 
-                            } else {
+                            if ( !found ) {
                                 return null;
+                            } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
+                                return null;
+                            } else {
+                                foundAttributes[field] = w(found); 
                             }
                         } else if ( _(val).isArray() ) {
                             var new_val = [];
