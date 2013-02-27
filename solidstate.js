@@ -187,7 +187,7 @@ define([
         
         // Begins in 'ready' state with no attributes
         var url = c(function() { return u(args.url); });
-        self.state = o('initial');
+        self.state = o( _(args).has('state') ? u(args.state) : 'initial' );
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         var attributes = o({});
@@ -456,6 +456,7 @@ define([
             return RemoteModel({ 
                 url: args.uri, 
                 name: self.name + '[' + args.uri + ']',
+                state: 'ready',
                 attributes: args.attributes,
                 relationships: self.relationships
             });
