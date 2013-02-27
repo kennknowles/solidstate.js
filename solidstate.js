@@ -1,10 +1,11 @@
 "use strict";
 define([ 
+    'jquery',
     'underscore',
     'backbone', 
     'knockout',
     'purl',
-], function(_, Backbone, ko, purl) {
+], function($, _, Backbone, ko, purl) {
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
@@ -16,6 +17,19 @@ define([
     // Secret value that indicates something should not bother to fetch
     var NOFETCH = "solidstate.NOFETCH";
 
+    var when = function(thingWithState, goalState, callback) {
+        if (thingWithState.state.peek() === goalState) {
+            callback();
+        } else {
+            var subscription = thingWithState.state.subscribe(function() {
+                if (thingWithState.state.peek() === goalState) {
+                    subscription.dispose();
+                    callback();
+                }
+            });
+        }
+    }
+
     // type observableLike = a | ko.observable a
 
     // interface Model =
@@ -26,8 +40,7 @@ define([
     //   fetch      :: () -> ()
     //   save       :: () -> ()
     //
-    //   relatedModel      :: String -> Model
-    //   relatedCollection :: String -> Collection
+    //   relationships     :: (String, Collection) -> Collection
     // }
     //
     // The state transitions thusly, with any network request
@@ -37,6 +50,10 @@ define([
     // *          --[ save    ]--> "saving"
     // "fetching" --[ success ]--> "ready"
     // "saving"   --[ success ]--> "ready"
+    //
+    // Most of the time, you should write code as dependent observables of the state.
+    // but there is also a single 'when' function that will call back exactly once
+    // the next time a particular state appears (NOT a particular event!)
 
     // Implementation wrapper with fluent interface ::
     // {
@@ -44,9 +61,30 @@ define([
     //   withState             :: observableLike ("ready"|"fetching"|...) -> Model    // takes the provided state unless it is "ready" then takes current
     //   withAttributes        :: observableLike {String: observableLike ??} -> Model  // Overlays those attributes
     //   withSubresourcesFrom :: {String: Collection} -> Model                      // Plugs in models from the collection for URLs, else state is "fetching"
+    //
+    //   relatedModel      :: String -> Model       // Just looks up by URL
+    //   relatedCollection :: String -> Collection  // Looks up via relationships
+    //
+    //   when :: (String, () -> ()) -> ()
     // }
     var Model = function(implementation) {
         var self = _(this).extend(implementation);
+
+        self.fetch = function() { implementation.fetch(); return self };
+        
+        self.relatedCollection = function(attr) { 
+            var justThisModelCollection = new Collection({ 
+                state: self.state, 
+                models: c(function() { return [self]; })
+            });
+            return self.relationships(justThisModelCollection, attr); 
+        }
+
+
+        self.when = function(goalState, callback) {
+            when(self, goalState, callback);
+            return self; // just to be fluent
+        }
 
         self.withState = function(state) {
             var impl = _({}).extend(self, {
@@ -128,6 +166,8 @@ define([
             }));
         }
 
+        self.toString = function() { return 'Model()'; };
+
         return self;
     }
 
@@ -138,18 +178,36 @@ define([
     // {
     //   url                :: String | ko.observable String
     //   attributes         :: {String: ??} // initial attributes
-    //   relatedModel      :: (Model, String) -> Model
-    //   relatedCollection :: (Model, String) -> Collection
+    //   relationships      :: (Collection, String) -> Collection
     // }
     var RemoteModel = function(args) {
         var self = {};
         
         // Begins in 'ready' state with no attributes
         var url = c(function() { return u(args.url); });
-        self.state = o('ready');
+        self.state = o('initial');
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         var attributes = o({});
+        self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        
+        self.relatedModel = function(attr) {
+            var justThisModelCollection = new Collection({ 
+                state: self.state, 
+                models: c(function() {
+                    var models = {};
+                    models[url] = self;
+                    return models; 
+                })
+            });
+            
+            return RemoteModel({
+                name: self.name + '.' + attr,
+                url: self.attributes()[attr],
+                debug: self.debug,
+                relationships: self.relationships(justThisModelCollection, attr).relationships
+            });
+        }
         
         //  Set up a private Backbone.Model to handle HTTP, etc.
         var bbModel = new (Backbone.Model.extend({ url: url }))();
@@ -159,7 +217,6 @@ define([
         // object of attributes -> values | ko.observable, not just
         // `bbModel.changedAttributes()`
         function updateAttributes(changedAttributes) {
-            if (self.debug) console.log(self.name, '<--', url(), changedAttributes)
             if (!changedAttributes) return;
 
             var nextAttributes = _(attributes.peek()).clone();
@@ -219,19 +276,55 @@ define([
             bbModel.fetch({ 
                 success: function(model, response) { 
                     if (nonce === myNonce) {
-                        updateAttributes(model.changedAttributes());
+                        var changedAttributes = model.changedAttributes();
+                        if (self.debug) console.log(self.name, '<--', url(), changedAttributes)
+                        updateAttributes(changedAttributes);
                         self.state('ready');
                     }
                 }
             });
-            return self; // Just to be "fluent"
+            return new Model(self); // Just to be "fluent"
         };
         
-        // A model is unaware by nature of which of its attributes may be
-        // relationships to other models. It must be told via the
-        // constructor.
-        self.relatedModel = function(attr) { return args.relatedModel(self, attr); };
-        self.relatedCollection = function(attr) { return args.relatedCollection(self, attr); };
+        self.toString = function() { return 'RemoteModel'; };
+
+        return new Model(self);
+    }
+
+    // A model that proxies for a new model until it is ready. Currently has a permanent (tiny) proxy overhead.
+    var NewModel = function(args) {
+        var self = {};
+
+        self.underlyingModel = o(null);
+        
+        self.readyState = o('initial');
+        self.state = c(function() { return self.readyState() !== 'ready' ? self.readyState() : self.underlyingModel().state(); });
+       
+        self.attributes = c({
+            read: function() { return self.underlyingModel() ? self.underlyingModel().attributes() : {} },
+            write: function(attrs) { self.underlyingModel() ? self.underlyingModel().attributes(attrs) : undefined }
+        });
+        
+        self.relatedCollection = function(model, attr) {
+            if (self.underlyingModel()) return self.underlyingModel().relatedCollection(model, attr);
+        }
+
+        self.fetch = function() { 
+            if (self.underlyingModel()) {
+                self.underlyingModel.fetch(); 
+                return self.underlyingModel;
+            } else {
+                return new Model(self);
+            }
+        }
+
+        self.save = function() { if (self.underlyingModel()) self.underlyingModel.save(); }
+
+        var fakeModel = new Model({state: args.state});
+        fakeModel.when('ready', function() { 
+            self.underlyingModel(args.next()); 
+            self.readyState('ready');
+        });
 
         return new Model(self);
     }
@@ -245,7 +338,6 @@ define([
     //   create :: {String:??} -> ()  // input is attributes for a new Model
     //
     //   relationships      :: (Collection, String) -> Collection
-    //   relatedCollection :: String -> Collection   // Passes in self to the above
     // }
 
     // Implementation wrapper with fluent interface
@@ -258,6 +350,7 @@ define([
     //   // only available if the underlying collection provides it
     //   withData                 :: ({String:??} | ko.observable {String:??}) -> Collection 
     //   withName                 :: String -> Collection
+    //   relatedCollection :: String -> Collection   // Passes in self to the above
     // }
     //
     // The state transitions thusly, with any network request
@@ -276,6 +369,11 @@ define([
         self.relatedCollection = function(attr) { return self.relationships(self, attr); }
 
         self.fetch = function() { implementation.fetch(); return self };
+
+        self.when = function(goalState, callback) {
+            when(self, goalState, callback);
+            return self; // just to be fluent
+        }
 
         //self.withData = function(data) { return new Collection(implementation.withData(data)); }
         //self.withName = function(name) { return new Collection(implementation.withName(name)); }
@@ -335,12 +433,12 @@ define([
     var RemoteCollection = function(args) {
         var self = {};
         
-        self.url = ko.isObservable(args.url) ? args.url : ko.observable(args.url);
-        self.data = ko.isObservable(args.data) ? args.data : ko.observable(args.data);
+        self.url = w(args.url);
+        self.data = w(args.data);
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
-        
+
         self.state = ko.observable("initial");
         self.models = ko.observable({});
         
@@ -350,12 +448,22 @@ define([
             parse: function(response) { return response.objects; }
         });
         var bbCollection = new bbCollectionClass();
+
+        // An ss.Model for an existing model fetching via the collection
+        var modelInThisCollection = function(args) {
+            return RemoteModel({ 
+                url: args.uri, 
+                name: self.name + '[' + args.uri + ']',
+                attributes: args.attributes,
+                relationships: self.relationships
+            });
+        };
         
         // Because of the simplified state machine, we only have to subscribe to 'reset'
         // TODO: Never remove a model, but force client code to filter & sort and let
         // this just be a monotonic knowledge base.
-        function updateModels(receivedModels) {
-            if (self.debug) console.log(self.name, '<--', self.url(), receivedModels);
+        var updateModels = function(receivedModels) {
+            if (self.debug) console.log(self.name, '<--', '(' + _(receivedModels).size() + ' results)');
 
             var next_models = _(self.models()).clone();
             var models_changed = false;
@@ -368,14 +476,9 @@ define([
                     next_models[uri].attributes(bbModel.attributes);
                 } else {
                     models_changed = true;
-                    next_models[uri] = RemoteModel({ 
-                        url: uri, 
-                        name: self.name + '[' + uri + ']',
+                    next_models[uri] = modelInThisCollection({ 
+                        uri: uri, 
                         attributes: bbModel.attributes,
-                        relatedModel: function(model, attr) {
-                            return RemoteModel({ url: model.attributes()[attr],
-                                                 name: self.name + '[' + uri + '].' + attr}).fetch();
-                        }
                     });
                 }
             });
@@ -396,19 +499,29 @@ define([
         var nonce = null;
         function newNonce() { nonce = Math.random(); return nonce; }
         
-        self.create = function(attributes) { 
+        self.create = function(args) { 
             var myNonce = newNonce();
             self.state("saving");
             
             // Will trigger an "add" hence `updateModels` once the server responds happily
-            bbCollection.create(attributes, {
+            var bbModel = bbCollection.create(args.attributes, {
                 wait: true,
                 success: function(new_model) { if (nonce === myNonce) self.state('ready'); } 
+            });
+
+            return NewModel({
+                state: self.state,
+                next: function() { 
+                    return modelInThisCollection({ 
+                        uri: bbModel.get('resource_uri'),
+                        attributes: bbModel.attributes 
+                    }); 
+                }
             });
         };
         
         self.fetch = function() {
-            if (self.debug) console.log(self.name, '-->', self.url(), self.data());
+            if (self.debug) console.log(self.name, '-->', self.url(), '?', $.param(self.data(), true));
 
             var _data = _({}).extend(self.data());
             if (_(_data).any(function(v) { return v === NOFETCH; })) {
@@ -443,6 +556,24 @@ define([
                 debug: self.debug,
                 url: self.url,
                 data: c(function() { return _({}).extend(self.data(), u(additionalData)); }),
+                relationships: self.relationships
+            });
+        };
+
+        self.withParam = function(additionalParam) {
+            var newUrl = c(function() {
+                var parsedUrl = purl(u(self.url));
+                var newParam = _({}).extend( _(parsedUrl.param()).omit(""), u(additionalParam))
+                var protocolPrefix = parsedUrl.attr('protocol') ? (parsedUrl.attr('protocol') + '://') : '';
+
+                return protocolPrefix + parsedUrl.attr('path') + '?' + $.param(newParam, true);
+            });
+
+            return RemoteCollection({
+                name: self.name,
+                debug: self.debug,
+                url: newUrl,
+                data: self.data,
                 relationships: self.relationships
             });
         };
@@ -487,10 +618,10 @@ define([
         self.keyType = args.keyType || ( ((self.type === "toOne")||(self.type === "toMany")) ? "uri" : "id" );
         self.key = args.key || ( ((self.type === "toOne")||(self.type === "toMany")) ? "resource_uri" : "id" ); // The attribute on the source collection
 
-        self.relatedCollection = function(sourceCollections, destCollection) {
+        self.relatedCollection = function(sourceCollection, destCollection) {
             // This should cut off computation if the actual related items has not changed
             var relatedKeys = c(function() { 
-                var attrs = _.chain(sourceCollections.models()).values().map(function(m) { return u(m.attributes()[self.key]); });
+                var attrs = _.chain(sourceCollection.models()).values().map(function(m) { return u(m.attributes()[self.key]); });
 
                 if ( self.type === "toMany" ) {
                     attrs = attrs.flatten();
@@ -522,6 +653,7 @@ define([
                 if ( _(keys).isEmpty() ) { keys = NOFETCH; }
                 
                 var _data = _(self.data()).clone();
+                _data.limit = 0; // Enough rope to hang yourself with, but partial join only break things
                 _data[self.reverseField] = keys;
                 return _data;
             });
@@ -549,6 +681,9 @@ define([
     // fetching --[ success ]--> ready
     var Api = function(impl) {
         var self = _(this).extend(impl);
+
+        self.fetch = function() { impl.fetch(); return self };
+        self.when = function(goalState, callback) { when(self, goalState, callback); return self; };
     }
     
     // Api constructor from url
@@ -568,11 +703,12 @@ define([
         var self = {};
 
         self.url = w(args.url);
-        self.state = o("ready");
+        self.state = o("initial");
         self.collections = o({});
         self.debug = args.debug || false;
+        self.name = args.name || 'solidstate.RemoteApi';
         var relationships = {};
-
+        
         // underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
         _(args.relationships).each(function(relationshipsByDest, sourceName) {
             _(relationshipsByDest).each(function(relationshipParams, attr) {
@@ -609,6 +745,7 @@ define([
                 if ( _(nextCollections).has(name) ) {
                     // Do nothing!
                 } else {
+                    if (self.debug) console.log(' - ', name);
                     nextCollections[name] = RemoteCollection({ 
                         name: name,
                         debug: self.debug,
@@ -631,10 +768,12 @@ define([
 
         self.fetch = function() {
             self.state("fetching");
+            if (self.debug) console.log(self.name, '-->', u(self.url))
             var myNonce = newNonce();
             bbModel.fetch({
                 success: function(model, response) { 
                     if (nonce === myNonce) {
+                        if (self.debug) console.log(self.name, '<--', u(self.url))
                         updateCollections(model.changedAttributes());
                         self.state('ready'); 
                     } 
@@ -644,7 +783,7 @@ define([
             return self; // Just to be "fluent"
         };
 
-        self.relatedCollection = function(sourceName, attr, sourceCollections) {
+        self.relatedCollection = function(sourceName, attr, sourceCollection) {
             var relationship = relationships[sourceName][attr]; 
 
             if (!relationship) 
@@ -656,12 +795,13 @@ define([
                 throw ("No collection named " + relationship.collection);
 
             // Get the related collection and rewrite its relationships to be keyed off the proper src name
-            return relationship.rel.relatedCollection(sourceCollections, destCollection).withRelationships(function(coll, attr) {
+            return relationship.rel.relatedCollection(sourceCollection, destCollection).withRelationships(function(coll, attr) {
                 return self.relatedCollection(relationship.collection, attr, coll);
             });
         };
 
-        return new Api(self);
+        var api = new Api(self);
+        return api;
     }
 
     //
@@ -679,7 +819,7 @@ define([
         RemoteCollection: RemoteCollection,
         RemoteModel: RemoteModel,
 
-        // Misc constant
-        NOFETCH: NOFETCH
+        // Misc 
+        NOFETCH: NOFETCH,
     }
 });
