@@ -137,6 +137,18 @@ define([
             expect(m.state()).toBe("ready");
         });
 
+        it("Provides .toJSON that serializes the current value of the attributes, not the Model interface itself", function() {
+            var impl = { attributes: o({foo: o('baz')}) };
+            var m = new ss.Model(impl);
+
+            expect(JSON.parse(JSON.stringify(m))).toEqual({foo: 'baz'});
+            
+            var impl = { attributes: o({foo: 'baz', subresource: o( new ss.Model({ attributes: o({ bizzle: o('bazzle') }) }) ) }) };
+            var m = new ss.Model(impl);
+            
+            expect(JSON.parse(JSON.stringify(m))).toEqual({foo: 'baz', subresource: { bizzle: 'bazzle'} });
+        });
+
         it("Provides .withState that blends the provided state with the underlying state", function() {
             var impl = { state: o("fetching") };
             var overlayed = o("fetching");

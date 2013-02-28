@@ -28,7 +28,10 @@ define([
                 }
             });
         }
-    }
+    };
+
+    // Really poor/basic serialization
+    var toJValue = function(value) { return JSON.parse(JSON.stringify(value)) };
 
     // type observableLike = a | ko.observable a
 
@@ -80,13 +83,19 @@ define([
                 models: c(function() { return [self]; })
             });
             return self.relationships(justThisModelCollection, attr); 
-        }
+        };
 
+        self.toJSON = function() {
+            var result = {};
+            _(u(self.attributes)).each(function(value, key) { result[key] = u(value); });
+            console.log(result);
+            return result;
+        };
 
         self.when = function(goalState, callback) {
             when(self, goalState, callback);
             return self; // just to be fluent
-        }
+        };
 
         self.withState = function(state) {
             var impl = _({}).extend(self, {
@@ -94,7 +103,7 @@ define([
             });
 
             return new Model(impl);
-        }
+        };
         
         self.withAttributes = function(attributes) {
             var impl = _({}).extend(self, {
@@ -586,7 +595,7 @@ define([
                     }
 
                     // Will trigger an "add" hence `updateModels` once the server responds happily
-                    var bbModel = bbCollection.create(ko.deepUnwrap(args.attributes), {
+                    var bbModel = bbCollection.create(toJValue(args.attributes), {
                         wait: true,
                         success: function(newModel) { 
                             // No nonce needed because the collection's state does not change
