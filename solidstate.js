@@ -88,7 +88,6 @@ define([
         self.toJSON = function() {
             var result = {};
             _(u(self.attributes)).each(function(value, key) { result[key] = u(value); });
-            console.log(result);
             return result;
         };
 
