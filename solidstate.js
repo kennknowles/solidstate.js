@@ -173,6 +173,55 @@ define([
         return self;
     }
 
+    // Model constructor from just a dictionary of attributes that just stores them
+    var LocalModel = function(args) {
+        var self = {};
+        
+        self.name = args.name || "(unknown)";
+        self.debug = args.debug || false;
+        self.state = c(function() { return 'ready'; });
+        self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        
+        var attributes = o({});
+        
+        var updateAttributes = function(newAttributes) {
+            var keysChanged = false;
+            var nextAttributes = _(attributes.peek()).clone();
+            newAttributes = u(newAttributes)
+
+            _(newAttributes).each(function(value, key) {
+                var val = u(value);
+
+                if (_(nextAttributes).has(key)) {
+                    nextAttributes[key](val);
+                } else {
+                    nextAttributes[key] = o(val);
+                    keysChanged = true;
+                }
+            });
+
+            _.chain(nextAttributes).keys().each(function(key) {
+                if ( !_(newAttributes).has(key) ) {
+                    delete newAttributes[key];
+                    keysChanged = true;
+                }
+            });
+
+            if (keysChanged)
+                attributes(nextAttributes);
+        }
+        updateAttributes(args.attributes);
+
+        self.attributes = c({
+            read: function() { return attributes(); },
+            write: function(newAttributes) { updateAttributes(newAttributes); }
+        });
+
+        self.fetch = function() { return self; }
+        self.save = function() { return self; }
+
+        return new Model(self);
+    }
     
     // Model constructor from url, data, attributes
     //
@@ -293,43 +342,64 @@ define([
         return new Model(self);
     }
 
-    // A model that proxies for a new model until it is ready. Currently has a permanent (tiny) proxy overhead.
+    // A model that has not been saved yet. It need not be a REST backend, but anything where
+    // save() must occur and then we'll get a real Model back.
+    //
+    // Current has a permanent (tiny) proxy overhead
     var NewModel = function(args) {
-        var self = {};
-
-        self.underlyingModel = o(null);
+        var self = {},
+            create = args.create;
         
-        self.readyState = o('initial');
-        self.state = c(function() { return self.readyState() !== 'ready' ? self.readyState() : self.underlyingModel().state(); });
+        // This state marches from initial -> saving -> ready
+        var initializationState = o('initial');
+
+        // Use an initial local model until first save, when we pass the gathered data on
+        var initialModel = LocalModel({
+            name: args.name,
+            debug: args.debug,
+            attributes: args.attributes,
+        })
+
+        var createdModel = null;
+        
+        self.state = c(function() { return initializationState() === 'ready' ? createdModel.state() : initializationState() });
        
         self.attributes = c({
-            read: function() { return self.underlyingModel() ? self.underlyingModel().attributes() : {} },
-            write: function(attrs) { self.underlyingModel() ? self.underlyingModel().attributes(attrs) : undefined }
+            read: function() { return initializationState() === 'ready' ? createdModel.attributes() : initialModel.attributes() },
+            write: function(attrs) { initializationState() === 'ready' ? createdModel.attributes(attrs) : initialModel.attributes(attrs) }
         });
         
         self.relatedCollection = function(model, attr) {
-            if (self.underlyingModel()) return self.underlyingModel().relatedCollection(model, attr);
+            if (initializationState() === 'ready') 
+                return createdModel.relatedCollection(model, attr);
         }
 
         self.fetch = function() { 
-            if (self.underlyingModel()) {
-                self.underlyingModel.fetch(); 
-                return self.underlyingModel;
-            } else {
-                return new Model(self);
-            }
+            if (initializationState() === 'ready') 
+                createdModel.fetch(); 
+            return self;
         }
 
-        self.save = function() { if (self.underlyingModel()) self.underlyingModel.save(); }
-
-        var fakeModel = new Model({state: args.state});
-        fakeModel.when('ready', function() { 
-            self.underlyingModel(args.next()); 
-            self.readyState('ready');
-        });
+        self.save = function() { 
+            if (initializationState() === 'initial') {
+                var createResult = create({
+                    attributes: initialModel.attributes(),
+                    debug: initialModel.debug,
+                    name: initialModel.name
+                });
+                initializationState('saving');
+                when(createResult, 'ready', function() {
+                    createdModel = createResult.model();
+                    initializationState('ready');
+                })
+            } else if (initializationState() === 'ready') {
+                createdModel.save()
+            }
+            return self;
+        }
 
         return new Model(self);
-    }
+    };
                                                    
     // Interface Collection =
     // {
@@ -502,23 +572,31 @@ define([
         var nonce = null;
         function newNonce() { nonce = Math.random(); return nonce; }
         
-        self.create = function(args) { 
-            var myNonce = newNonce();
-            self.state("saving");
-            
-            // Will trigger an "add" hence `updateModels` once the server responds happily
-            var bbModel = bbCollection.create(args.attributes, {
-                wait: true,
-                success: function(new_model) { if (nonce === myNonce) self.state('ready'); } 
-            });
-
+        self.fresh = function(args) { 
             return NewModel({
-                state: self.state,
-                next: function() { 
-                    return modelInThisCollection({ 
-                        uri: bbModel.get('resource_uri'),
-                        attributes: bbModel.attributes 
-                    }); 
+                attributes: args.attributes,
+                save: function(attributes) { 
+                    var modelHoldingPen = {
+                        state: o('saving'),
+                        model: o(null)
+                    }
+                    
+                    // Will trigger an "add" hence `updateModels` once the server responds happily
+                    var bbModel = bbCollection.create(args.attributes, {
+                        wait: true,
+                        success: function(newModel) { 
+                            // No nonce needed because the collection's state does not change
+                            modelHoldingPen.model(
+                                modelInThisCollection({ 
+                                    uri: newModel.get('resource_uri'),
+                                    attributes: newModel.attributes 
+                                })
+                            );
+                            modelHoldingPen.state('ready'); 
+                        }
+                    });
+                    
+                    return modelHoldingPen;
                 }
             });
         };
@@ -818,9 +896,11 @@ define([
         Api: Api,
 
         // Implementations
-        RemoteApi: RemoteApi,
-        RemoteCollection: RemoteCollection,
+        LocalModel: LocalModel,
+        NewModel: NewModel,
         RemoteModel: RemoteModel,
+        RemoteCollection: RemoteCollection,
+        RemoteApi: RemoteApi,
 
         // Misc 
         NOFETCH: NOFETCH,
