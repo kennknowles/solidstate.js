@@ -70,7 +70,9 @@ define([
     var Model = function(implementation) {
         var self = _(this).extend(implementation);
 
-        self.fetch = function() { implementation.fetch(); return self };
+        self.fetch = function() { implementation.fetch(); return self; };
+
+        self.save = function() { implementation.save(); return self; };
         
         self.relatedCollection = function(attr) { 
             var justThisModelCollection = new Collection({ 
@@ -572,17 +574,17 @@ define([
         var nonce = null;
         function newNonce() { nonce = Math.random(); return nonce; }
         
-        self.fresh = function(args) { 
+        self.newModel = function(args) { 
             return NewModel({
                 attributes: args.attributes,
-                save: function(attributes) { 
+                create: function(args) { 
                     var modelHoldingPen = {
                         state: o('saving'),
                         model: o(null)
                     }
-                    
+
                     // Will trigger an "add" hence `updateModels` once the server responds happily
-                    var bbModel = bbCollection.create(args.attributes, {
+                    var bbModel = bbCollection.create(ko.deepUnwrap(args.attributes), {
                         wait: true,
                         success: function(newModel) { 
                             // No nonce needed because the collection's state does not change
