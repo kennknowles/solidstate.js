@@ -362,23 +362,25 @@ define([
             attributes: args.attributes,
         })
 
-        var createdModel = null;
+        // This changes one before initializationState, so the internal bits that depend on it fire before the
+        // external world gets a state change (depending on attributes() before checking state() means client is out of luck!)
+        var createdModel = o(null)
         
-        self.state = c(function() { return initializationState() === 'ready' ? createdModel.state() : initializationState() });
+        self.state = c(function() { return initializationState() === 'ready' ? createdModel().state() : initializationState() });
        
         self.attributes = c({
-            read: function() { return initializationState() === 'ready' ? createdModel.attributes() : initialModel.attributes() },
-            write: function(attrs) { initializationState() === 'ready' ? createdModel.attributes(attrs) : initialModel.attributes(attrs) }
+            read: function() { return createdModel() ? createdModel().attributes() : initialModel.attributes() },
+            write: function(attrs) { createdModel() ? createdModel().attributes(attrs) : initialModel.attributes(attrs) }
         });
         
         self.relatedCollection = function(model, attr) {
-            if (initializationState() === 'ready') 
-                return createdModel.relatedCollection(model, attr);
+            if (createdModel())
+                return createdModel().relatedCollection(model, attr);
         }
 
         self.fetch = function() { 
-            if (initializationState() === 'ready') 
-                createdModel.fetch(); 
+            if (createdModel())
+                createdModel().fetch(); 
             return self;
         }
 
@@ -391,7 +393,7 @@ define([
                 });
                 initializationState('saving');
                 when(createResult, 'ready', function() {
-                    createdModel = createResult.model();
+                    createdModel(createResult.model());
                     initializationState('ready');
                 })
             } else if (initializationState() === 'ready') {
