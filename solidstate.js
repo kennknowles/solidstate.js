@@ -109,25 +109,28 @@ define([
             return new Model(impl);
         };
         
-        self.withAttributes = function(attributes) {
+        self.withAttributes = function(overlayedAttributes) {
             var impl = _({}).extend(self, {
                 attributes: c({
                     read: function() {
-                        var oldAttributes = self.attributes();
-                        var newAttributes = attributes();
+                        var underlyingAttributesNow = self.attributes();
+                        var overlayedAttributesNow = u(overlayedAttributes);
 
-                        return _({}).extend(oldAttributes, newAttributes);
+                        return _({}).extend(underlyingAttributesNow, overlayedAttributesNow);
                     },
                     
                     write: function(updatedAttributes) { 
-                        var newAttributes = attributes();
+                        var underlyingAttributesNow = self.attributes();
+                        var overlayedAttributesNow = overlayedAttributes();
+                        var overlayedKeys = _(overlayedAttributesNow).keys();
                         
-                        // Set the attribute in the overlay
-                        attributes( _(updatedAttributes).pick(_(newAttributes).keys()) );
+                        overlayedAttributes( _(updatedAttributes).pick(overlayedKeys) );
 
-                        // Now set the global attributes, including setting the overlay
-                        self.attributes( _({}).extend(self.attributes(), _(updatedAttributes).omit(_(newAttributes).keys())) );
-                    },
+                        // We should never again touch attributes hidden by the overlay; in order for them
+                        // not to be erased they must be set here as well.
+                        self.attributes( _({}).extend(_(underlyingAttributesNow).pick(overlayedKeys),
+                                                      _(updatedAttributes).omit(overlayedKeys)) );
+                    }
                 })
             });
 
@@ -137,76 +140,79 @@ define([
         // Plugs in for the subresources
         self.withSubresourcesFrom = function(subresourceCollections) {
             var augmentedAttributes = c({
-                write: function(newAttributes) {
-                    var underlyingAttributes = _(newAttributes).clone();
+                write: function(_updatedAttributes) {
+                    var updatedAttributes = _(_updatedAttributes).clone();
 
-                    for (var field in newAttributes) {
-                        if ( ! _(underlyingAttributes[field]).isString() ) {
+                    for (var field in updatedAttributes) {
+                        if ( ! _(updatedAttributes[field]).isString() ) {
                             if ( _(subresourceCollections).has(field) ) {
-                                underlyingAttributes[field] = underlyingAttributes[field].resource_uri;
+                                updatedAttributes[field] = updatedAttributes[field].resource_uri;
                             }
                         }
                     }
                     
-                    self.attributes.write(underlyingAttributes); // Avoid writing the obj to underlying as that would screw it up
+                    // Note that this does not properly go through the individual observables.... don't use it?
+                    self.attributes(updatedAttributes); // Avoid writing the obj to underlying as that would screw it up
                 },
                 read: function() {
-                    var foundAttributes = {};
                     var underlyingAttributes = self.attributes();
-                
-                    // Using loops instead of _.map to short-circuit ASAP if something is not found
-                    for (var field in subresourceCollections) {
-                        
-                        // Be a little flexible about accepting a collection or a dictionary, for testing & providing literal collections
-                        var subcoll = subresourceCollections[field];
-                        var models = _(subcoll).has('models') ? u(subcoll.models) : u(subcoll);
+                    var overlayedAttributes = {};
+
+                    _(subresourceCollections).each(function(subcoll, field) {
                         var underlyingAttribute = underlyingAttributes[field];
-                        var val = underlyingAttribute();
-                        
-                        // If an object is already here, it won't be a string or number and we are OK with that
-                        if ( _(val).isString() || _(val).isNumber() ) {
-                            var found = models[val];
-                            if ( !found ) {
-                                return null;
-                            } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
-                                return null;
-                            } else {
-                                // Hack: hardcoded setting of resource_uri to underlying attributes
-                                foundAttributes[field] = c({ 
-                                    read:  function() { return found; },
-                                    write: function(model) { 
-                                        // Supports writing raw values, too, at user's risk
-                                        if ( _(model).isString() || _(model).isNumber() || _(model).isNull() ) {
-                                            underlyingAttribute(model);
-                                        } else {
-                                            underlyingAttribute(model.attributes().resource_uri()); 
-                                        }
+
+                        overlayedAttributes[field] = c({
+                            read: function() {
+                                var subcoll = subresourceCollections[field];
+                                var models = _(subcoll).has('models') ? u(subcoll.models) : u(subcoll);
+                                var val = underlyingAttribute();
+
+                                if ( _(val).isString() || _(val).isNumber() ) {
+                                    var found = models[val];
+                                    if ( !found ) {
+                                        return null;
+                                    } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
+                                        return null; // Note that we *could* return the unready thing...
+                                    } else {
+                                        return found;
                                     }
-                                });
+                                } else if ( _(val).isArray() ) {
+                                    var newVal = [];
+                                    for (var i in val) {
+                                        var found = models[val[i]];
+                                        if ( found ) 
+                                            newVal.push(found)
+                                        else
+                                            return null;
+                                    }
+                                    return newVal;
+                                }
+                            },
+
+                            write: function(model) {
+                                // Supports writing raw values, too, at user's risk
+                                if ( _(model).isString() || _(model).isNumber() || _(model).isNull() ) {
+                                    underlyingAttribute(model);
+                                } else {
+                                    underlyingAttribute(model.attributes().resource_uri()); // TODO: make resource_uri configured not hardcoded
+                                }
                             }
-                        } else if ( _(val).isArray() ) {
-                            var new_val = [];
-                            for (var i in val) {
-                                var found = models[val[i]];
-                                if ( found ) 
-                                    new_val.push(found)
-                                else
-                                    return null;
-                            }
-                            foundAttributes[field] = w(new_val);
-                        }
-                    }
-                    return foundAttributes;
+                        });
+                    });
+                    return overlayedAttributes;
                 }
             });
-                    
+                
             var withAttrs = self.withAttributes(augmentedAttributes);
 
             return withAttrs.withState(c(function() {
-                if ( augmentedAttributes() === null )
-                    return "fetching";
-                else
-                    return "ready";
+                for (var field in subresourceCollections) {
+                    if (self.attributes()[field]() && !withAttrs.attributes()[field]()) {
+                        return "fetching";
+                    } else {
+                        return "ready";
+                    }
+                }
             }));
         }
 
@@ -287,6 +293,9 @@ define([
         var attributes = o({});
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
         self.attributeErrors = o({});
+
+        // Dependency Injection
+        var BB = args.Backbone || Backbone;
         
         self.relatedModel = function(attr) {
             var justThisModelCollection = new Collection({ 
@@ -307,7 +316,7 @@ define([
         }
         
         //  Set up a private Backbone.Model to handle HTTP, etc.
-        var bbModel = new (Backbone.Model.extend({ url: url }))();
+        var bbModel = new (BB.Model.extend({ url: url }))();
         
         // Taking in a dictionary of attributes, updates as appropriate.
         // Note that this function should be safe to call with an arbitrary
@@ -334,7 +343,9 @@ define([
                 } else {
                     // Otherwise make a fresh observable that writes back to the model,
                     var obs = ko.observable();
-                    obs.subscribe(function(newValue) { bbModel.set(attr, newValue, { silent: true }); });
+                    obs.subscribe(function(newValue) { 
+                        bbModel.set(attr, newValue, { silent: true });
+                    });
                     obs(newValue);
                     
                     nextAttributes[attr] = obs;
@@ -466,8 +477,8 @@ define([
     //   state  :: ko.observable ("initial" | "ready" | "fetching" | "saving") // read only
     //   models :: ko.observable {String: Model}                              // keyed on model URI
     //
-    //   fetch  :: () -> ()
-    //   create :: {String:??} -> ()  // input is attributes for a new Model
+    //   fetch    :: () -> ()
+    //   newModel :: {String:??} -> ()  // input is attributes for a new Model
     //
     //   relationships      :: (Collection, String) -> Collection
     // }
@@ -538,6 +549,10 @@ define([
                     else
                         return self.state();
                 }),
+
+                newModel: function(args) {
+                    return self.newModel(args).withSubresourcesFrom(subresourceCollections);
+                },
                 
                 models: augmentedModels
             });
@@ -660,7 +675,6 @@ define([
                         },
                         error: function(model, xhr, options) {
                             // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
-                            console.log(model, xhr, options);
                             modelHoldingPen.attributeErrors(_(JSON.parse(xhr.responseText)).values()[0]); // currently the dictionary has a key for the class name (or something)
                             modelHoldingPen.state('error');
                         }

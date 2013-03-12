@@ -61,6 +61,17 @@ define([
         });
     });
 
+    describe("The RemoteModel implementation of Model", function() {
+        var Backbone = {
+            Model: function() {
+                var self = this;
+                self.save = jasmine.createSpy();
+                self.set = jasmine.createSpy();
+                self.get = jasmine.createSpy();
+            }
+        }
+    });
+
     describe("The NewModel implementation of Model", function() {
         describe("Is constructed from arguments for a LocalModel (and a create function) and acts like a local model until saved", function() {
             localModelAttributeSpec(ss.NewModel);
@@ -92,6 +103,37 @@ define([
             var args = wrapper.newModel.mostRecentCall.args[0];
             expect(args.name).toBe('me');
             expect(u(u(args.attributes).foo)).toBe('bizzle');
+        });
+
+        it("Prior to a save, can still have withSubresourcesFrom proxy its attributes", function() {
+            var wrapper = {
+                newModel: function(args) {
+                    return {
+                        state: o('ready'),
+                        model: o(ss.LocalModel(args))
+                    };
+                }
+            };
+            spyOn(wrapper, 'newModel').andCallThrough();
+
+            var m = ss.NewModel({
+                name: 'me',
+                attributes: {
+                    foo: 'baz',
+                    link: 'to_resource'
+                },
+                create: wrapper.newModel
+            });
+            //var m2 = m.withSubresourcesFrom({ link: { to_resource: { attributes: o({}) } } });
+            var m2 = m.withSubresourcesFrom({ link: {} });
+            m2.attributes().link({ attributes: o({ resource_uri: o('fake_uri') }) });
+            expect(m.attributes().link()).toBe('fake_uri');
+
+            m2.save();
+            
+            var args = wrapper.newModel.mostRecentCall.args[0];
+            expect(args.name).toBe('me');
+            expect(u(u(args.attributes).link)).toBe('fake_uri');
         });
 
 
@@ -184,6 +226,10 @@ define([
             m2.attributes({"foo": o(7)})
             expect(m.attributes().foo()).toBe(1);
             expect(m2.attributes().foo()).toBe(7);
+
+            m2.attributes().foo(10);
+            expect(m.attributes().foo()).toBe(1);
+            expect(m2.attributes().foo()).toBe(10);
             
             m2.attributes({"foo": o(9), "baz": o(22)})
             expect(m.attributes().foo()).toBe(1);
@@ -242,7 +288,7 @@ define([
             expect(c3.models().one.state()).toBe("ready");
             expect(c3.models().one.attributes().foo()).toBe(25);
             expect(c3.models().two.state()).toBe("fetching");
-            expect(c3.models().two.attributes().foo()).toBe("biz");
+            expect(c3.models().two.attributes().foo()).toBe(null);
 
             incomplete_models({baz: 29, biz: 101});
             expect(c3.state()).toBe("ready");
