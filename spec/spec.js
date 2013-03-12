@@ -192,7 +192,7 @@ define([
             expect(m2.attributes().baz()).toBe(22);
         });
 
-        it("Provides .withSubresourcesFrom that looks up attributes in a dict or Collection (and sets state to 'fetching' until they are all found)", function() {
+        it("Provides .withSubresourcesFrom that overlays models looked up in a dict or Collection, sets state to 'fetching' until they are all found, and writes URLs back", function() {
             var impl = { 
                 state: o("ready"),
                 attributes: o({ foo: o("baz") }) 
@@ -206,6 +206,10 @@ define([
             expect(m2.attributes().foo()).toEqual({ bingle: 24 });
             expect(m2.state()).toBe("ready");
             expect(m3.state()).toBe("fetching");
+
+            // Minor hack: resource_uri hardcoded in the library (as in a few places)
+            m2.attributes().foo({ attributes: o({ resource_uri: o('bizzle') }) });
+            expect(m.attributes().foo()).toEqual('bizzle');
         });
     });
 

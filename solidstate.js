@@ -37,8 +37,9 @@ define([
 
     // interface Model =
     // {
-    //   state      :: observable ("intial" | "ready" | "fetching" | "saving")  // read only
-    //   attributes :: observable {String: observable *}
+    //   state           :: observable ("intial" | "ready" | "fetching" | "saving")  // read only
+    //   attributes      :: observable {String: observable *}
+    //   attributeErrors :: observable { String -> observable [String] } // for validation or backend errors, etc
     //
     //   fetch      :: () -> ()
     //   save       :: () -> ()
@@ -73,10 +74,14 @@ define([
     var Model = function(implementation) {
         var self = _(this).extend(implementation);
 
+        if ( typeof self.attributeErrors === 'undefined' ) self.attributeErrors = o({});
+
+        if ( typeof self.attributes === 'undefined' ) self.attributes = o({});
+
         self.fetch = function() { implementation.fetch(); return self; };
 
         self.save = function() { implementation.save(); return self; };
-        
+
         self.relatedCollection = function(attr) { 
             var justThisModelCollection = new Collection({ 
                 state: self.state, 
@@ -117,7 +122,10 @@ define([
                     write: function(updatedAttributes) { 
                         var newAttributes = attributes();
                         
+                        // Set the attribute in the overlay
                         attributes( _(updatedAttributes).pick(_(newAttributes).keys()) );
+
+                        // Now set the global attributes, including setting the overlay
                         self.attributes( _({}).extend(self.attributes(), _(updatedAttributes).omit(_(newAttributes).keys())) );
                     },
                 })
@@ -129,9 +137,22 @@ define([
         // Plugs in for the subresources
         self.withSubresourcesFrom = function(subresourceCollections) {
             var augmentedAttributes = c({
-                write: self.attributes.write,
+                write: function(newAttributes) {
+                    var underlyingAttributes = _(newAttributes).clone();
+
+                    for (var field in newAttributes) {
+                        if ( ! _(underlyingAttributes[field]).isString() ) {
+                            if ( _(subresourceCollections).has(field) ) {
+                                underlyingAttributes[field] = underlyingAttributes[field].resource_uri;
+                            }
+                        }
+                    }
+                    
+                    self.attributes.write(underlyingAttributes); // Avoid writing the obj to underlying as that would screw it up
+                },
                 read: function() {
                     var foundAttributes = {};
+                    var underlyingAttributes = self.attributes();
                 
                     // Using loops instead of _.map to short-circuit ASAP if something is not found
                     for (var field in subresourceCollections) {
@@ -139,8 +160,8 @@ define([
                         // Be a little flexible about accepting a collection or a dictionary, for testing & providing literal collections
                         var subcoll = subresourceCollections[field];
                         var models = _(subcoll).has('models') ? u(subcoll.models) : u(subcoll);
-
-                        var val = self.attributes()[field]();
+                        var underlyingAttribute = underlyingAttributes[field];
+                        var val = underlyingAttribute();
                         
                         // If an object is already here, it won't be a string or number and we are OK with that
                         if ( _(val).isString() || _(val).isNumber() ) {
@@ -150,7 +171,11 @@ define([
                             } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
                                 return null;
                             } else {
-                                foundAttributes[field] = w(found); 
+                                // Hack: hardcoded setting of resource_uri to underlying attributes
+                                foundAttributes[field] = c({ 
+                                    read:  function() { return found; },
+                                    write: function(model) { underlyingAttribute(model.attributes().resource_uri()); } 
+                                });
                             }
                         } else if ( _(val).isArray() ) {
                             var new_val = [];
@@ -184,13 +209,19 @@ define([
     }
 
     // Model constructor from just a dictionary of attributes that just stores them
+    // for mocking/testing/etc, it will also accept `fetch`, `state`, and `save` callbacks,
+    // to which it will pass itself.
     var LocalModel = function(args) {
         var self = {};
         
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        self.state = c(function() { return 'ready'; });
+        self.state = o('ready');
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        self.fetch = function() { if (args.fetch) args.fetch(self); return self; };
+        self.save = function() { if (args.save) args.save(self); return self; };
+        self.attributeErrors = o(args.attributeErrors || {});
+
         
         var attributes = o({});
         
@@ -227,9 +258,6 @@ define([
             write: function(newAttributes) { updateAttributes(newAttributes); }
         });
 
-        self.fetch = function() { return self; }
-        self.save = function() { return self; }
-
         return new Model(self);
     }
     
@@ -251,6 +279,7 @@ define([
         self.debug = args.debug || false;
         var attributes = o({});
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        self.attributeErrors = o({});
         
         self.relatedModel = function(attr) {
             var justThisModelCollection = new Collection({ 
@@ -359,7 +388,7 @@ define([
     var NewModel = function(args) {
         var self = {},
             create = args.create;
-        
+
         // This state marches from initial -> saving -> ready
         var initializationState = o('initial');
 
@@ -370,11 +399,15 @@ define([
             attributes: args.attributes,
         })
 
+        var attributeErrors = o({});
+
         // This changes one before initializationState, so the internal bits that depend on it fire before the
         // external world gets a state change (depending on attributes() before checking state() means client is out of luck!)
         var createdModel = o(null)
         
         self.state = c(function() { return initializationState() === 'ready' ? createdModel().state() : initializationState() });
+        
+        self.attributeErrors = c(function() { return createdModel() ? createdModel().attributeErrors() : attributeErrors() });
        
         self.attributes = c({
             read: function() { return createdModel() ? createdModel().attributes() : initialModel.attributes() },
@@ -400,12 +433,20 @@ define([
                     name: initialModel.name
                 });
                 initializationState('saving');
+
+                // Note: this leaks - once it becomes ready or error the other can never happen, but
+                // I don't really want to expose subscriptions explicitly; thinking about the right move
                 when(createResult, 'ready', function() {
                     createdModel(createResult.model());
                     initializationState('ready');
-                })
+                });
+                when(createResult, 'error', function() {
+                    attributeErrors(createResult.attributeErrors());
+                    initializationState('error');
+                    initializationState('initial');
+                });
             } else if (initializationState() === 'ready') {
-                createdModel.save()
+                createdModel().save()
             }
             return self;
         }
@@ -590,11 +631,15 @@ define([
                 create: function(args) { 
                     var modelHoldingPen = {
                         state: o('saving'),
-                        model: o(null)
+                        model: o(null),
+                        attributeErrors: o({})
                     }
 
                     // Will trigger an "add" hence `updateModels` once the server responds happily
-                    var bbModel = bbCollection.create(toJValue(args.attributes), {
+                    var payload = toJValue(LocalModel(args));
+                    if (self.debug) console.log(self.name, '==>', payload);
+
+                    var bbModel = bbCollection.create(payload, {
                         wait: true,
                         success: function(newModel) { 
                             // No nonce needed because the collection's state does not change
@@ -605,6 +650,12 @@ define([
                                 })
                             );
                             modelHoldingPen.state('ready'); 
+                        },
+                        error: function(model, xhr, options) {
+                            // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
+                            console.log(model, xhr, options);
+                            modelHoldingPen.attributeErrors(_(JSON.parse(xhr.responseText)).values()[0]); // currently the dictionary has a key for the class name (or something)
+                            modelHoldingPen.state('error');
                         }
                     });
                     
@@ -737,7 +788,7 @@ define([
                     throw ("Invalid key type " + self.keyType);
                 }
 
-                return attrs.value().sort();
+                return attrs.uniq().value().sort();
             });
 
             // This should only fire if the sorted set of attributes has actually changed
