@@ -174,7 +174,14 @@ define([
                                 // Hack: hardcoded setting of resource_uri to underlying attributes
                                 foundAttributes[field] = c({ 
                                     read:  function() { return found; },
-                                    write: function(model) { underlyingAttribute(model.attributes().resource_uri()); } 
+                                    write: function(model) { 
+                                        // Supports writing raw values, too, at user's risk
+                                        if ( _(model).isString() || _(model).isNumber() || _(model).isNull() ) {
+                                            underlyingAttribute(model);
+                                        } else {
+                                            underlyingAttribute(model.attributes().resource_uri()); 
+                                        }
+                                    }
                                 });
                             }
                         } else if ( _(val).isArray() ) {
@@ -641,11 +648,11 @@ define([
 
                     var bbModel = bbCollection.create(payload, {
                         wait: true,
-                        success: function(newModel) { 
+                        success: function(newModel, response, options) { 
                             // No nonce needed because the collection's state does not change
                             modelHoldingPen.model(
                                 modelInThisCollection({ 
-                                    uri: newModel.get('resource_uri'),
+                                    uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
                                     attributes: newModel.attributes 
                                 })
                             );
