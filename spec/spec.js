@@ -124,16 +124,20 @@ define([
                 },
                 create: wrapper.newModel
             });
-            //var m2 = m.withSubresourcesFrom({ link: { to_resource: { attributes: o({}) } } });
-            var m2 = m.withSubresourcesFrom({ link: {} });
-            m2.attributes().link({ attributes: o({ resource_uri: o('fake_uri') }) });
-            expect(m.attributes().link()).toBe('fake_uri');
+            var m2 = m.withSubresourcesFrom({ link: { to_resource: { attributes: o({ resource_uri: o('to_resource') }) } } });
+            var m3 = m.withSubresourcesFrom({ link: {} });
 
+            m3.attributes().link({ attributes: o({ resource_uri: o('fake_uri') }) });
+            expect(m.attributes().link()).toBe('fake_uri');
+            m2.attributes().link({ attributes: o({ resource_uri: o('to_resource') }) });
+            expect(m2.attributes().link().attributes().resource_uri()).toBe('to_resource');
+            
             m2.save();
             
             var args = wrapper.newModel.mostRecentCall.args[0];
             expect(args.name).toBe('me');
-            expect(u(u(args.attributes).link)).toBe('fake_uri');
+            expect(u(u(args.attributes).link)).toBe('to_resource');
+            expect(m2.attributes().link().attributes().resource_uri()).toBe('to_resource');
         });
 
 
