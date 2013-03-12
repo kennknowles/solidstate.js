@@ -220,12 +220,15 @@ define([
         it("Provides .withAttributes that overlays the provided attributes with the underlying attributes", function() {
             var impl = { attributes: o({"foo": o(1), "baz": o(8)}) };
             var overlayed = ko.observable({"foo": o(4)});
+            var overlayed2 = ko.observable({"bizzz": o(5)});
 
             var m = new ss.Model(impl);
             var m2 = m.withAttributes(overlayed);
+            var m3 = m.withAttributes(overlayed2);
             
             expect(m.attributes().foo()).toBe(1);
             expect(m2.attributes().foo()).toBe(4);
+            expect(m3.attributes().bizzz()).toBe(5);
 
             m2.attributes({"foo": o(7)})
             expect(m.attributes().foo()).toBe(1);
