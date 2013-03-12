@@ -373,6 +373,7 @@ define([
         self.save = function() { 
             var myNonce = newNonce();
             self.state("saving");
+            if (self.debug) console.log(self.name, '==>', bbModel.attributes, '(', self.attributes(), ')');
             bbModel.save({}, { success: function() { if (nonce === myNonce) self.state('ready'); } });
             return self; // Just to be "fluent"
         };
@@ -599,6 +600,7 @@ define([
         // An ss.Model for an existing model fetching via the collection
         var modelInThisCollection = function(args) {
             return RemoteModel({ 
+                debug: self.debug,
                 url: args.uri, 
                 name: self.name + '[' + args.uri + ']',
                 state: 'ready',
@@ -649,6 +651,7 @@ define([
         
         self.newModel = function(args) { 
             return NewModel({
+                debug: self.debug,
                 attributes: args.attributes,
                 create: function(args) { 
                     var modelHoldingPen = {
