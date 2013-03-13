@@ -50,8 +50,8 @@ define([
                     });
             } else {
                 it("If model.attributes().field() is NOT in the collection, \
-                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === null", function() {
-                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toBe(null);
+                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === undefined", function() {
+                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toBe(undefined);
                     });
             }
         });
@@ -314,8 +314,36 @@ define([
     });
 
     describe("The solidstate RemoteCollection implementation of Collection", function() {
-        describe("", function() {
+        describe("newModel yields a new model in the collection (with the right subresources) which calls back to save, when ready", function() {
+
+            var spyCreate = jasmine.createSpy();
+            var MockBBCollection = Backbone.Collection.extend({
+                create: spyCreate
+            });
+            var MockBBModel = function() { };
+            var MockBackbone = {
+                Collection: MockBBCollection,
+                Model: MockBBModel
+            };
+
+            var baseColl = ss.RemoteCollection({
+                url: '/some/fake/url',
+                Backbone: MockBackbone
+            });
+            var overlay = { link: { 'model_uri': ss.LocalModel({ attributes: { foo: 'baz' } }) } };
+            var coll = baseColl.withSubresourcesFrom(overlay);
+
+            var newModel = coll.newModel({ attributes: { link: null } });
+            newModel.attributes().link(ss.LocalModel({ attributes: { resource_uri: 'fake_uri' } }));
+            newModel.save();
+
+            it("calls back to the collection to create a remote model with the URL of the overlay", function() {
+                var args = spyCreate.mostRecentCall.args[0];
+                expect(args.link).toBe('fake_uri');
+            });
         });
+
+        // If the above is done with a derived relatedSubresource then it should immediately re-fetch!
     });
 
     describe("The solidstate Collection fluent interface", function() {
@@ -347,7 +375,7 @@ define([
             expect(c3.models().one.state()).toBe("ready");
             expect(c3.models().one.attributes().foo()).toBe(25);
             expect(c3.models().two.state()).toBe("fetching");
-            expect(c3.models().two.attributes().foo()).toBe(null);
+            expect(c3.models().two.attributes().foo()).toBe(undefined);
 
             incomplete_models({baz: 29, biz: 101});
             expect(c3.state()).toBe("ready");

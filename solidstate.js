@@ -35,6 +35,62 @@ define([
 
     // type observableLike = a | ko.observable a
 
+    // utility Attributes, a dictionary where setting the whole dictionary actually hits each observable,
+    // and extension is easy, as well as overlay.
+    // In particular it DOES NOT unwrap observable attributes when they are added, since they
+    // may be wacky computed observables.
+
+    // args :: {
+    //   attributes :: String ->
+    // }
+    var Attributes = function(args) {
+        args = args || {};
+        var self = {};
+        var attributes = o(u(args.attributes) || {});
+        var newAttribute = args.newAttribute || ko.observable;
+
+        var underlyingObservable = c({
+            read: function() {
+                return attributes();
+            },
+            write: function(newAttributes) {
+                var keysChanged = false;
+                var nextAttributes = _(attributes.peek()).clone();
+
+                newAttributes = u(newAttributes);
+
+                _(newAttributes).each(function(value, key) {
+                    if (_(nextAttributes).has(key)) {
+                        nextAttributes[key](u(value));
+                    } else {
+                        nextAttributes[key] = o(val);
+                        keysChanged = true;
+                    }
+                });
+
+                _.chain(nextAttributes).keys().each(function(key) {
+                    if ( !_(newAttributes).has(key) ) {
+                        delete newAttributes[key];
+                        keysChanged = true;
+                    }
+                });
+
+                if (keysChanged)
+                    attributes(nextAttributes);
+            }
+        });
+
+        if ( args.attributes ) {
+            attributes( args.attributes );
+        }
+
+        return _(underlyingObservable).extend({
+            extend: function(extendedAttributes) {
+                underlyingObservable( _(underlyingObservable()).extend(extendedAttributes) );
+            }
+        });
+    }
+
     // interface Model =
     // {
     //   state           :: observable ("intial" | "ready" | "fetching" | "saving")  // read only
@@ -159,7 +215,19 @@ define([
                     var overlayedAttributes = {};
 
                     _(subresourceCollections).each(function(subcoll, field) {
-                        var underlyingAttribute = underlyingAttributes[field];
+                        // Force the attribute to exist, so it can be properly proxied
+                        if ( !_(self.attributes()).has(field) ) {
+                            var newAttr = {};
+                            newAttr[field] = o(undefined);
+                            self.attributes( _(underlyingAttributes).extend(newAttr) );
+                        }
+
+                        var underlyingAttribute = self.attributes()[field];
+
+                        if ( typeof underlyingAttribute === 'undefined' ) {
+                            console.log('WARNING: attempt to link to subresource via undefined attribute', field);
+                            return;
+                        }
 
                         overlayedAttributes[field] = c({
                             read: function() {
@@ -170,7 +238,7 @@ define([
                                 if ( _(val).isString() || _(val).isNumber() ) {
                                     var found = models[val];
                                     if ( !found ) {
-                                        return null;
+                                        return undefined;
                                     } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
                                         return null; // Note that we *could* return the unready thing...
                                     } else {
@@ -190,6 +258,7 @@ define([
                             },
 
                             write: function(model) {
+
                                 // Supports writing raw values, too, at user's risk
                                 if ( _(model).isString() || _(model).isNumber() || _(model).isNull() ) {
                                     underlyingAttribute(model);
@@ -250,6 +319,10 @@ define([
                     nextAttributes[key](val);
                 } else {
                     nextAttributes[key] = o(val);
+                    nextAttributes[key].subscribe(function(newValue) {
+                        if ( (key === 'assignment') && (newValue === null) )
+                            throw 'wtf';
+                    });
                     keysChanged = true;
                 }
             });
@@ -273,6 +346,19 @@ define([
 
         return new Model(self);
     }
+
+    var BBWriteBackObservable = function(args) {
+        var underlyingObservable = o();
+        var bbModel = args.bbModel;
+        var attribute = args.attribute;
+        var debug = args.debug;
+        
+        underlyingObservable.subscribe(function(newValue) {
+            bbModel.set(attribute, newValue, { silent: true });
+        });
+
+        return underlyingObservable;
+    }
     
     // Model constructor from url, data, attributes
     //
@@ -290,9 +376,10 @@ define([
         self.state = o( _(args).has('state') ? u(args.state) : 'initial' );
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        var attributes = o({});
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
         self.attributeErrors = o({});
+
+        var attributes = o({});
 
         // Dependency Injection
         var BB = args.Backbone || Backbone;
@@ -342,12 +429,8 @@ define([
                     }
                 } else {
                     // Otherwise make a fresh observable that writes back to the model,
-                    var obs = ko.observable();
-                    obs.subscribe(function(newValue) { 
-                        bbModel.set(attr, newValue, { silent: true });
-                    });
+                    var obs = BBWriteBackObservable({ bbModel: bbModel, attribute: attr, debug: self.debug });
                     obs(newValue);
-                    
                     nextAttributes[attr] = obs;
                     attributesDidChange = true;
                 }
@@ -589,9 +672,10 @@ define([
 
         self.state = ko.observable("initial");
         self.models = ko.observable({});
+        var BB = args.Backbone || Backbone; // For swapping out network library if desired, and for testing
         
         // A private `Backbone.Collection` for dealing with HTTP/jQuery
-        var bbCollectionClass = Backbone.Collection.extend({ 
+        var bbCollectionClass = BB.Collection.extend({ 
             url: self.url,
             parse: function(response) { return response.objects; }
         });
@@ -605,14 +689,15 @@ define([
                 name: self.name + '[' + args.uri + ']',
                 state: 'ready',
                 attributes: args.attributes,
-                relationships: self.relationships
+                relationships: self.relationships,
+                Backbone: BB
             });
         };
         
         // Because of the simplified state machine, we only have to subscribe to 'reset'
         // TODO: Never remove a model, but force client code to filter & sort and let
         // this just be a monotonic knowledge base.
-        var updateModels = function(receivedModels) {
+        var updateModels = function(receivedModels, options) {
             if (self.debug) console.log(self.name, '<--', '(' + _(receivedModels).size() + ' results)');
 
             var next_models = _(self.models()).clone();
@@ -634,10 +719,12 @@ define([
             });
             
             // Remove any non-present models
-            _.chain(next_models).keys().difference(bbCollection.pluck('resource_uri')).each(function(uri) {
-                delete next_models[uri];
-                models_changed = true;
-            });
+            if ( !(options && options.extend) ) {
+                _.chain(next_models).keys().difference(bbCollection.pluck('resource_uri')).each(function(uri) {
+                    delete next_models[uri];
+                    models_changed = true;
+                });
+            }
             
             // Mutate the dict if it has changed
             if (models_changed) {
@@ -650,6 +737,9 @@ define([
         function newNonce() { nonce = Math.random(); return nonce; }
         
         self.newModel = function(args) { 
+            args = args || {};
+            args.attributes = args.attributes || o({});
+
             return NewModel({
                 debug: self.debug,
                 attributes: args.attributes,
@@ -668,12 +758,13 @@ define([
                         wait: true,
                         success: function(newModel, response, options) { 
                             // No nonce needed because the collection's state does not change
-                            modelHoldingPen.model(
-                                modelInThisCollection({ 
-                                    uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
-                                    attributes: newModel.attributes 
-                                })
-                            );
+                            var createdModel = modelInThisCollection({ 
+                                uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
+                                attributes: newModel.attributes 
+                            });
+
+                            updateModels([newModel], { extend: true });
+                            modelHoldingPen.model(createdModel);
                             modelHoldingPen.state('ready'); 
                         },
                         error: function(model, xhr, options) {
