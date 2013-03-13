@@ -34,6 +34,41 @@ define([
             expect(spy).toHaveBeenCalled();
         });
 
+    };
+
+    var withSubresourcesFromReadSpec = function(model, field, collection) {
+        describe("The read behavior of model.withSubresourcesFrom({field: collection})", function() {
+            var overlay = {};
+            overlay[field] = collection;
+
+            var val = model.attributes()[field]();
+
+            if ( _(collection).has(val) ) {
+                it("If model.attributes().field() is in the collection, \
+                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === collection[model.attributes().field()]", function() {
+                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toEqual(collection[val]);
+                    });
+            } else {
+                it("If model.attributes().field() is NOT in the collection, \
+                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === null", function() {
+                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toBe(null);
+                    });
+            }
+        });
+    }
+
+    var withSubresourcesFromWriteSpec = function(model, field, collection) {
+        describe("The write behavior", function() {
+            var overlay = {};
+            overlay[field] = collection;
+
+            var val = model.attributes()[field]();
+
+            it("After model.withSubresourcesFrom({field: collection}).attributes()[field](subModel), the value of model.attributes()[field] is subModel's URL", function() {
+                model.withSubresourcesFrom(overlay).attributes()[field](ss.LocalModel({ attributes: { resource_uri: 'fizzle' } }));
+                expect(model.attributes()[field]()).toBe('fizzle');
+            });
+        })
     }
 
     describe("The LocalModel implementation of Model", function() {
@@ -75,6 +110,17 @@ define([
     describe("The NewModel implementation of Model", function() {
         describe("Is constructed from arguments for a LocalModel (and a create function) and acts like a local model until saved", function() {
             localModelAttributeSpec(ss.NewModel);
+        });
+
+        describe("Meets the read spec for withSubresourcesFrom before creation ", function() {
+            var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
+            withSubresourcesFromReadSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
+            withSubresourcesFromReadSpec(m, 'link', { other_resource: { attributes: ss.LocalModel({ resource_uri: 'other_resource' }) } });
+        });
+        
+        describe("Meets the write spec for withSubresourcesFrom before creation ", function() {
+            var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
+            withSubresourcesFromWriteSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
         });
         
         it("Passes the current values from the LocalModel to the `create` function", function() {
@@ -124,6 +170,7 @@ define([
                 },
                 create: wrapper.newModel
             });
+
             var m2 = m.withSubresourcesFrom({ link: { to_resource: { attributes: o({ resource_uri: o('to_resource') }) } } });
             var m3 = m.withSubresourcesFrom({ link: {} });
 
@@ -263,6 +310,11 @@ define([
             // Minor hack: resource_uri hardcoded in the library (as in a few places)
             m2.attributes().foo({ attributes: o({ resource_uri: o('bizzle') }) });
             expect(m.attributes().foo()).toEqual('bizzle');
+        });
+    });
+
+    describe("The solidstate RemoteCollection implementation of Collection", function() {
+        describe("", function() {
         });
     });
 
