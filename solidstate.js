@@ -457,7 +457,30 @@ define([
             var myNonce = newNonce();
             self.state("saving");
             if (self.debug) console.log(self.name, '==>', bbModel.attributes, '(', self.attributes(), ')');
-            bbModel.save({}, { success: function() { if (nonce === myNonce) self.state('ready'); } });
+            bbModel.save({}, { 
+                success: function() { 
+                    if (nonce === myNonce) {
+                        self.attributeErrors({});
+                        self.state('ready');
+                    } 
+                },
+
+                error: function(model, xhr, options) { 
+                    if (nonce === myNonce) {
+                        // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
+                        var err = JSON.parse(xhr.responseText);
+
+                        // The error dictionaries passed back from Tastypie are somewhat erratic. Sometimes there is a single key "error" with a string,
+                        // other times it is a list per attribute under a key that is the class name.
+                        if ( _(_(err).values()[0]).isString() ) {
+                            self.attributeErrors({'__all__': _(err).values()})
+                        } else {
+                            self.attributeErrors(_(err).values()[0])
+                        }
+                        self.state('ready');
+                    }
+                }
+            });
             return self; // Just to be "fluent"
         };
         
@@ -665,7 +688,7 @@ define([
         var self = {};
         
         self.url = w(args.url);
-        self.data = w(args.data);
+        self.data = w(args.data || {});
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         self.relationships = args.relationships || function(thisColl, attr) { return null; };
@@ -904,7 +927,7 @@ define([
                 }
 
                 return attrs.uniq().value().sort();
-            });
+            }).extend({throttle: 1});
 
             // This should only fire if the sorted set of attributes has actually changed
             var data = c(function() {
