@@ -46,49 +46,40 @@ define([
     var Attributes = function(args) {
         args = args || {};
         var self = {};
-        var attributes = o(u(args.attributes) || {});
-        var newAttribute = args.newAttribute || ko.observable;
+        var makeAttribute = args.makeAttribute || function(key, value) { return ko.observable(value); };
 
-        var underlyingObservable = c({
+        var actualAttributes = o({})
+
+        var wrappedAttributes = c({
             read: function() {
-                return attributes();
+                return actualAttributes();
             },
-            write: function(newAttributes) {
+            write: function(_newAttributes) {
                 var keysChanged = false;
-                var nextAttributes = _(attributes.peek()).clone();
-
-                newAttributes = u(newAttributes);
+                var nextAttributes = _(actualAttributes.peek()).clone();
+                var newAttributes = u(_newAttributes);
 
                 _(newAttributes).each(function(value, key) {
                     if (_(nextAttributes).has(key)) {
                         nextAttributes[key](u(value));
                     } else {
-                        nextAttributes[key] = o(val);
+                        nextAttributes[key] = makeAttribute(key, u(value));
                         keysChanged = true;
                     }
                 });
-
-                _.chain(nextAttributes).keys().each(function(key) {
-                    if ( !_(newAttributes).has(key) ) {
-                        delete newAttributes[key];
-                        keysChanged = true;
-                    }
-                });
+                
+                // Note that there is currently no way to remove an attribute (because that is a weird thing to do and the semantics aren't clean)
 
                 if (keysChanged)
-                    attributes(nextAttributes);
+                    actualAttributes(nextAttributes);
             }
         });
 
         if ( args.attributes ) {
-            attributes( args.attributes );
+            wrappedAttributes( args.attributes );
         }
 
-        return _(underlyingObservable).extend({
-            extend: function(extendedAttributes) {
-                underlyingObservable( _(underlyingObservable()).extend(extendedAttributes) );
-            }
-        });
+        return wrappedAttributes;
     }
 
     // interface Model =
@@ -219,7 +210,7 @@ define([
                         if ( !_(self.attributes()).has(field) ) {
                             var newAttr = {};
                             newAttr[field] = o(undefined);
-                            self.attributes( _(underlyingAttributes).extend(newAttr) );
+                            self.attributes(newAttr); // Now this only extends anyhow _(underlyingAttributes).extend(newAttr) );
                         }
 
                         var underlyingAttribute = self.attributes()[field];
@@ -304,58 +295,21 @@ define([
         self.save = function() { if (args.save) args.save(self); return self; };
         self.attributeErrors = o(args.attributeErrors || {});
 
-        
-        var attributes = o({});
-        
-        var updateAttributes = function(newAttributes) {
-            var keysChanged = false;
-            var nextAttributes = _(attributes.peek()).clone();
-            newAttributes = u(newAttributes)
-
-            _(newAttributes).each(function(value, key) {
-                var val = u(value);
-
-                if (_(nextAttributes).has(key)) {
-                    nextAttributes[key](val);
-                } else {
-                    nextAttributes[key] = o(val);
-                    nextAttributes[key].subscribe(function(newValue) {
-                        if ( (key === 'assignment') && (newValue === null) )
-                            throw 'wtf';
-                    });
-                    keysChanged = true;
-                }
-            });
-
-            _.chain(nextAttributes).keys().each(function(key) {
-                if ( !_(newAttributes).has(key) ) {
-                    delete newAttributes[key];
-                    keysChanged = true;
-                }
-            });
-
-            if (keysChanged)
-                attributes(nextAttributes);
-        }
-        updateAttributes(args.attributes);
-
-        self.attributes = c({
-            read: function() { return attributes(); },
-            write: function(newAttributes) { updateAttributes(newAttributes); }
-        });
+        self.attributes = Attributes({ attributes: args.attributes });
 
         return new Model(self);
     }
 
-    var BBWriteBackObservable = function(args) {
+    var BBWriteThroughObservable = function(args) {
         var underlyingObservable = o();
         var bbModel = args.bbModel;
         var attribute = args.attribute;
-        var debug = args.debug;
         
         underlyingObservable.subscribe(function(newValue) {
             bbModel.set(attribute, newValue, { silent: true });
         });
+
+        underlyingObservable(args.value);
 
         return underlyingObservable;
     }
@@ -405,49 +359,17 @@ define([
         //  Set up a private Backbone.Model to handle HTTP, etc.
         var bbModel = new (BB.Model.extend({ url: url }))();
         
-        // Taking in a dictionary of attributes, updates as appropriate.
-        // Note that this function should be safe to call with an arbitrary
-        // object of attributes -> values | ko.observable, not just
-        // `bbModel.changedAttributes()`
-        function updateAttributes(changedAttributes) {
-            if (!changedAttributes) return;
-
-            var nextAttributes = _(attributes.peek()).clone();
-            var attributesDidChange = false; // This only records whether there are attributes added/deleted.
-
-            _(changedAttributes).each(function(newValue, attr) {
-
-                if ( _(nextAttributes).has(attr) ) {
-                    // If the attribute exists, then set it to the new value
-                    nextAttributes[attr](newValue);
-
-                    // but if it has become undefined, delete it also
-                    // (some things may react to the above anyhow!)
-                    if ( typeof newValue === "undefined" ) {
-                        delete nextAttributes[attr];
-                        attributesDidChange = true;
-                    }
-                } else {
-                    // Otherwise make a fresh observable that writes back to the model,
-                    var obs = BBWriteBackObservable({ bbModel: bbModel, attribute: attr, debug: self.debug });
-                    obs(newValue);
-                    nextAttributes[attr] = obs;
-                    attributesDidChange = true;
-                }
-            });
-
-            // Mutate the larger attribute collection only if necessary
-            if (attributesDidChange) {
-                attributes(nextAttributes);
+        self.attributes = Attributes({
+            attributes: args.attributes,
+            makeAttribute: function(attribute, value) {
+                return BBWriteThroughObservable({ 
+                    bbModel: bbModel, 
+                    attribute: attribute,
+                    debug: self.debug,
+                    value: value
+                });
             }
-        };
-        
-        // Expose the attributes via a writable computed observable that calls updateAttributes
-        self.attributes = c({
-            read:  function() { return attributes() },
-            write: function(newAttributes) { updateAttributes(newAttributes); }
-        });
-        self.attributes(args.attributes);
+        })
         
         // This will be mutated to correspond to the latest response; any other response will be ignored.
         var nonce = null;
@@ -493,7 +415,7 @@ define([
                     if (nonce === myNonce) {
                         var changedAttributes = model.changedAttributes();
                         if (self.debug) console.log(self.name, '<--', url(), changedAttributes)
-                        updateAttributes(changedAttributes);
+                        self.attributes(changedAttributes);
                         self.state('ready');
                     }
                 }
@@ -723,7 +645,7 @@ define([
         var updateModels = function(receivedModels, options) {
             if (self.debug) console.log(self.name, '<--', '(' + _(receivedModels).size() + ' results)');
 
-            var next_models = _(self.models()).clone();
+            var next_models = _(self.models.peek()).clone();
             var models_changed = false;
             
             // Adjust any existing models, add new ones
@@ -1103,7 +1025,11 @@ define([
         RemoteCollection: RemoteCollection,
         RemoteApi: RemoteApi,
 
+        // Helpers, exposed for testing and whatever
+        Attributes: Attributes,
+        BBWriteThroughObservable: BBWriteThroughObservable,
+
         // Misc 
-        NOFETCH: NOFETCH,
+        NOFETCH: NOFETCH
     }
 });

@@ -29,8 +29,8 @@ define([
             expect(m.attributes().baz()).toBe("who's there");
             expect(spy).not.toHaveBeenCalled();
 
-            m.attributes({foo: "bizzle"});
-            expect(m.attributes().foo()).toBe("bizzle");
+            m.attributes({boomer: "bizzle"});
+            expect(m.attributes().boomer()).toBe("bizzle");
             expect(spy).toHaveBeenCalled();
         });
 
@@ -94,17 +94,6 @@ define([
             m.save();
             expect(m.state()).toBe('ready');
         });
-    });
-
-    describe("The RemoteModel implementation of Model", function() {
-        var Backbone = {
-            Model: function() {
-                var self = this;
-                self.save = jasmine.createSpy();
-                self.set = jasmine.createSpy();
-                self.get = jasmine.createSpy();
-            }
-        }
     });
 
     describe("The NewModel implementation of Model", function() {
@@ -310,6 +299,44 @@ define([
             // Minor hack: resource_uri hardcoded in the library (as in a few places)
             m2.attributes().foo({ attributes: o({ resource_uri: o('bizzle') }) });
             expect(m.attributes().foo()).toEqual('bizzle');
+        });
+    });
+
+    describe("The solidstate BBWriteThroughObservable", function() {
+        it("Writes back to a backbone model", function() {
+            var m = new Backbone.Model(); // No need for a mock, here
+            var o = ss.BBWriteThroughObservable({
+                bbModel: m,
+                attribute: 'foo',
+                value: 3
+            });
+
+            expect(o()).toBe(3);
+            expect(m.get('foo')).toBe(3);
+        });
+    });
+
+    describe("The solidstate RemoteModel implementation of Model", function() {
+        it("Writes back to a backbone model", function() {
+            var spySet = jasmine.createSpy();
+            var spyFetch = jasmine.createSpy();
+            var spySave = jasmine.createSpy();
+            var MockBBModel = Backbone.Model.extend({
+                fetch: spyFetch,
+                save: spySave
+            });
+
+            var MockBackbone = {
+                Model: MockBBModel
+            };
+
+            var model  = ss.RemoteModel({
+                url: '/some/fake/url',
+                Backbone: MockBackbone
+            });
+
+            model.attributes({foo: 'bar'});
+            expect(model.attributes().foo()).toBe('bar');
         });
     });
 
