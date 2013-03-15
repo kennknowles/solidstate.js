@@ -927,6 +927,17 @@ define([
         var self = _(this).extend(impl);
     };
     
+    // So common!
+    var Rel = function(args) {
+        var self = {
+            link: args.link.link,  // args.link is a constructed CollectionLink object
+            deref: args.deref.deref // args.deref is a constructed Dereference object
+        };
+
+        return new Relationship(self);
+    }
+    
+    
     // JoinRelationship constructor with args ::
     // {
     //   type     :: ("toOne" | "toMany" | "fromOne" | "fromMany")  // how the two collections get linked up
