@@ -795,9 +795,66 @@ define([
         return new Collection(self);
     }
 
+    // The "bulk" version of a URI, which links one model to another.
+    // This is a construct at a lower level than a Join, that tells
+    // how exactly to efficiently fetch the other end of a relationship.
+    //
+    // interface CollectionLink {
+    //   linkFrom :: src:Collection -> dst:Collection
+    // }
+    var CollectionLink = function(impl) {
+        var self = _(this).extend(impl);
+    };
+
+    // FilterLink contructor, based on adding querystring to dest, with args :: {
+    //   target   :: Collection,                // The unfiltered target collection
+    //   withData :: {String: Model -> String|Number}  // A dictionary of how to build the filter
+    // } 
+    var FilterLink = function(args) {
+        var target   = args.target,
+            withData = args.withData;
+
+        self.linkFrom = function(source) {
+            // Build a compacted and uniq'd set of a data to minimize jitter
+            var targetData = c(function() {
+                var data = {};
+                _(withData).each(function(fn, key) {
+                    data[key] = _.chain(source.models())
+                        .values()
+                        .map(fn)
+                        .filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
+                        .uniq()
+                        .value()
+                        .sort();
+                });
+                return data;
+            }).extend({throttle: 1});
+
+            return target.withData(targetData);
+        }
+
+        return new CollectionLink(self);
+    }
+
+    // And the most common filterLink is a single field
+    var FromOneFilterLink = function(args) {
+        var from      = args.from      || 'id',
+            transform = args.transform || function(x) { return x; },
+            to        = args.to;
+
+        var withData = {};
+        withData[to] = function(model) { return model.attributes()[from](); }
+        
+        return FilterLink({
+            target: args.target,
+            withData: withData
+        })
+    }
+
     // Interface Relationship = 
     // {
     //   relatedCollection :: src:Collection -> dst:Collection -> Collection  // from the src it pulls data to do dst.withData( ... ) for the return value
+    //   relatedValue      :: src:Model      -> dst:Collection -> Collection or Model // from the src it filters the dst and gives the right attribute value
     // }
     var Relationship = function(impl) {
         var self = _(this).extend(impl);
@@ -1015,6 +1072,7 @@ define([
         // Interfaces
         Model: Model,
         Collection: Collection,
+        CollectionLink: CollectionLink,
         Relationship: Relationship,
         Api: Api,
 
@@ -1023,6 +1081,7 @@ define([
         NewModel: NewModel,
         RemoteModel: RemoteModel,
         RemoteCollection: RemoteCollection,
+        FilterLink: FilterLink,
         RemoteApi: RemoteApi,
 
         // Helpers, exposed for testing and whatever

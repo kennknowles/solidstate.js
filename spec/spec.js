@@ -37,22 +37,20 @@ define([
     };
 
     var withSubresourcesFromReadSpec = function(model, field, collection) {
-        describe("The read behavior of model.withSubresourcesFrom({field: collection})", function() {
-            var overlay = {};
-            overlay[field] = collection;
-
-            var val = model.attributes()[field]();
-
+        var overlay = {};
+        overlay[field] = collection;
+        
+        var val = model.attributes()[field]();
+        
+        describe(".withSubresourcesFrom({field: collection})", function() {
             if ( _(collection).has(val) ) {
-                it("If model.attributes().field() is in the collection, \
-                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === collection[model.attributes().field()]", function() {
-                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toEqual(collection[val]);
-                    });
+                it(".attributes()[field]() === collection[model.attributes().field()]  // when .attributes().field() is in collection", function() {
+                    expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toEqual(collection[val]);
+                });
             } else {
-                it("If model.attributes().field() is NOT in the collection, \
-                    model.withSubresourcesFrom({field: collection}).attributes()[field]() === undefined", function() {
-                        expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toBe(undefined);
-                    });
+                it(".attributes()[field]() === undefined   // when .attributes().field() is not in the collection", function() {
+                    expect(model.withSubresourcesFrom(overlay).attributes()[field]()).toBe(undefined);
+                });
             }
         });
     }
@@ -71,7 +69,7 @@ define([
         })
     }
 
-    describe("The LocalModel implementation of Model", function() {
+    describe("LocalModel <: Model", function() {
         it("Is constructed directly from a dictionary of attributes", function() {
             var m = ss.LocalModel({
                 attributes: {
@@ -96,21 +94,17 @@ define([
         });
     });
 
-    describe("The NewModel implementation of Model", function() {
+    describe("NewModel <: Model", function() {
         describe("Is constructed from arguments for a LocalModel (and a create function) and acts like a local model until saved", function() {
             localModelAttributeSpec(ss.NewModel);
         });
 
-        describe("Meets the read spec for withSubresourcesFrom before creation ", function() {
-            var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
-            withSubresourcesFromReadSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
-            withSubresourcesFromReadSpec(m, 'link', { other_resource: { attributes: ss.LocalModel({ resource_uri: 'other_resource' }) } });
-        });
+        var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
+        withSubresourcesFromReadSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
+        withSubresourcesFromReadSpec(m, 'link', { other_resource: { attributes: ss.LocalModel({ resource_uri: 'other_resource' }) } });
         
-        describe("Meets the write spec for withSubresourcesFrom before creation ", function() {
-            var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
-            withSubresourcesFromWriteSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
-        });
+        var m = ss.NewModel({ attributes: { link: 'to_resource' }, create: function() { } });
+        withSubresourcesFromWriteSpec(m, 'link', { to_resource: { attributes: ss.LocalModel({ resource_uri: 'to_resource' }) } });
         
         it("Passes the current values from the LocalModel to the `create` function", function() {
             var wrapper = {
@@ -208,7 +202,7 @@ define([
         });
     });
 
-    describe("The solidstate Model fluent interface", function() {
+    describe("Model", function() {
         it("Directly wraps the implementation", function() {
 
             var impl = { state: o("fetching") };
@@ -281,24 +275,59 @@ define([
             expect(m2.attributes().baz()).toBe(22);
         });
 
-        it("Provides .withSubresourcesFrom that overlays models looked up in a dict or Collection, sets state to 'fetching' until they are all found, and writes URLs back", function() {
-            var impl = { 
-                state: o("ready"),
-                attributes: o({ foo: o("baz") }) 
-            };
+        describe(".withSubresourcesFrom", function() {
+
+            it("For singular references, overlays models looked up in a dict or Collection, sets state to 'fetching' until they are all found, and writes URLs back", function() {
+                var impl = { 
+                    state: o("ready"),
+                    attributes: o({ foo: o("baz") }) 
+                };
             
-            var m = new ss.Model(impl);
-            var m2 = m.withSubresourcesFrom({ foo: { baz: { bingle: 24 } } });
-            var m3 = m.withSubresourcesFrom({ foo: { boo: { bingle: 24 } } });
+                var m = new ss.Model(impl);
+                var m2 = m.withSubresourcesFrom({ foo: { baz: { bingle: 24 } } });
+                var m3 = m.withSubresourcesFrom({ foo: { boo: { bingle: 24 } } });
+                
+                expect(m.attributes().foo()).toBe("baz");
+                expect(m2.attributes().foo()).toEqual({ bingle: 24 });
+                expect(m2.state()).toBe("ready");
+                expect(m3.state()).toBe("fetching");
+                
+                // Minor hack: resource_uri hardcoded in the library (as in a few places)
+                m2.attributes().foo({ attributes: o({ resource_uri: o('bizzle') }) });
+                expect(m.attributes().foo()).toEqual('bizzle');
+            });
 
-            expect(m.attributes().foo()).toBe("baz");
-            expect(m2.attributes().foo()).toEqual({ bingle: 24 });
-            expect(m2.state()).toBe("ready");
-            expect(m3.state()).toBe("fetching");
+            it("For fromMany relationships, where there is no attribute... hosed without relationship knowledge!", function() {
+                
+            });
+        });
+    });
 
-            // Minor hack: resource_uri hardcoded in the library (as in a few places)
-            m2.attributes().foo({ attributes: o({ resource_uri: o('bizzle') }) });
-            expect(m.attributes().foo()).toEqual('bizzle');
+    describe("FilterLink <: CollectionLink", function() {
+        it("Is built from a target (codomain) collection and a function to build the filters per source collection", function() {
+            var src = new ss.Collection({
+                models: o({
+                    a: { x: 1 },
+                    b: { x: 2 },
+                    c: { x: null },
+                    d: { x: 2 },
+                    e: {}
+                })
+            });
+
+            var withDataSpy = jasmine.createSpy();
+            var dst = new ss.Collection({
+                withData: withDataSpy
+            });
+
+            var filterLink = ss.FilterLink({
+                target: dst,
+                withData: { my_filter: function(model) { return model.x; } }
+            });
+
+            var filteredDst = filterLink.linkFrom(src);
+            var dataObservable = withDataSpy.mostRecentCall.args[0];
+            expect(dataObservable()).toEqual({ my_filter: [1, 2] });
         });
     });
 
