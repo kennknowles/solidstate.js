@@ -321,7 +321,7 @@ define([
 
             var filteredDst = filterLink.link(src, dst);
             var dataObservable = withDataSpy.mostRecentCall.args[0];
-            expect(dataObservable()).toEqual({ my_filter: [1, 2] });
+            expect(dataObservable()).toEqual({ my_filter: [1, 2], limit: 0 });
         });
     });
 
@@ -348,7 +348,7 @@ define([
 
             var filteredDst = directLink.link(src, dst);
             var dataObservable = withDataSpy.mostRecentCall.args[0];
-            expect(dataObservable()).toEqual({ id__in: ['1', '47'] });
+            expect(dataObservable()).toEqual({ id__in: ['1', '47'], limit: 0 });
         });
     });
 

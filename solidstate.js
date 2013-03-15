@@ -820,14 +820,22 @@ define([
             var targetData = c(function() {
                 var data = {};
                 _(withData).each(function(fn, key) {
-                    data[key] = _.chain(source.models())
+                    var vals = _.chain(source.models())
                         .values()
                         .map(fn)
                         .filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
                         .uniq()
                         .value()
                         .sort();
+
+                    if ( _(vals).isEmpty() ) vals = NOFETCH;
+
+                    data[key] = vals
                 });
+
+                // And... danger / hardcoding for tastypie for now (can actually be easily expressed in the client code, but verbose)
+                data['limit'] = 0;
+
                 return data;
             }).extend({throttle: 1});
 
@@ -915,7 +923,17 @@ define([
         }
 
         return new Dereference(self);
-    }
+    };
+
+    // Special case is easy
+    var JoinToManyDeref = function(args) {
+        var from = args.from || die('Missing required argument `from` in solidstate.JoinToManyDeref'),
+            to   = args.to   || die('Missing required argument `to` in solidstate.JoinToManyDeref');
+
+        return FilterDeref({
+            filter: function(source, destination) { return u(source.attributes()[from]) === u(destination.attributes()[to]); }
+        })
+    };
 
     // Put them together, and you've got a relationship (but you can customize a relationship that is not built from them)
     //
@@ -1053,15 +1071,18 @@ define([
             _(relationshipsByDest).each(function(relationshipParams, attr) {
                 relationships[sourceName] = relationships[sourceName] || {};
 
-                relationships[sourceName][attr] = {
-                    collection: relationshipParams.collection,
-                    rel: JoinRelationship({
+                var rel = _(relationshipParams).has('rel') ? relationshipParams.rel
+                    : JoinRelationship({
                         debug: self.debug,
                         key: relationshipParams.key || attr,
                         keyType: relationshipParams.keyType,
                         type: relationshipParams.type,
                         reverseField: relationshipParams.reverseField
-                    })
+                    });
+
+                relationships[sourceName][attr] = {
+                    collection: relationshipParams.collection,
+                    rel: rel
                 };
             });
         })
@@ -1161,9 +1182,12 @@ define([
         RemoteModel: RemoteModel,
         RemoteCollection: RemoteCollection,
         FilterLink: FilterLink,
+        FromOneFilterLink: FromOneFilterLink,
         DirectUrlLink: DirectUrlLink,
         DirectDeref: DirectDeref,
         FilterDeref: FilterDeref,
+        JoinToManyDeref: JoinToManyDeref,
+        Rel: Rel,
         RemoteApi: RemoteApi,
 
         // Helpers, exposed for testing and whatever
