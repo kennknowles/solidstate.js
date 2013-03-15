@@ -316,16 +316,10 @@ define([
             });
 
             var withDataSpy = jasmine.createSpy();
-            var dst = new ss.Collection({
-                withData: withDataSpy
-            });
+            var dst = new ss.Collection({ withData: withDataSpy });
+            var filterLink = ss.FilterLink({ withData: { my_filter: function(model) { return model.x; } } });
 
-            var filterLink = ss.FilterLink({
-                target: dst,
-                withData: { my_filter: function(model) { return model.x; } }
-            });
-
-            var filteredDst = filterLink.linkFrom(src);
+            var filteredDst = filterLink.link(src, dst);
             var dataObservable = withDataSpy.mostRecentCall.args[0];
             expect(dataObservable()).toEqual({ my_filter: [1, 2] });
         });
@@ -350,10 +344,9 @@ define([
             
             var directLink = ss.DirectUrlLink({
                 from: 'x',
-                target: dst
             });
 
-            var filteredDst = directLink.linkFrom(src);
+            var filteredDst = directLink.link(src, dst);
             var dataObservable = withDataSpy.mostRecentCall.args[0];
             expect(dataObservable()).toEqual({ id__in: ['1', '47'] });
         });

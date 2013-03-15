@@ -803,21 +803,19 @@ define([
     // how exactly to efficiently fetch the other end of a relationship.
     //
     // interface CollectionLink {
-    //   linkFrom :: src:Collection -> dst:Collection
+    //   link :: src:Collection -> target:Collection -> dst:Collection
     // }
     var CollectionLink = function(impl) {
         var self = _(this).extend(impl);
     };
 
     // FilterLink contructor, based on adding querystring to dest, with args :: {
-    //   target   :: Collection,                // The unfiltered target collection
     //   withData :: {String: Model -> String|Number}  // A dictionary of how to build the filter
     // } 
     var FilterLink = function(args) {
-        var target   = args.target   || die('No target provided to FilterLink'),
-            withData = args.withData || die('No withData provided to FilterLink');
+        var withData = args.withData || die('No withData provided to FilterLink');
 
-        self.linkFrom = function(source) {
+        self.link = function(source, target) {
             // Build a compacted and uniq'd set of a data to minimize jitter
             var targetData = c(function() {
                 var data = {};
@@ -841,18 +839,14 @@ define([
 
     // Another very common case is building a filter on the other end from the source object
     var FromOneFilterLink = function(args) {
-        var target    = args.target    || die('No target provided to FromOneFilterLink'),
-            from      = args.from      || 'id',
+        var from      = args.from      || 'id',
             transform = args.transform || function(x) { return x; },
             to        = args.to;
 
         var withData = {};
         withData[to] = function(model) { return transform(u(model.attributes()[from])); };
         
-        return FilterLink({
-            target: target,
-            withData: withData
-        })
+        return FilterLink({ withData: withData })
     }
     
     // Of which the most most common case is a direct URL in the source object,
@@ -861,7 +855,6 @@ define([
     // can be parsed out of the Url as the last component, and filtered via id__in
     var DirectUrlLink = function(args) {
         return FromOneFilterLink({
-            target:    args.target || die('No target provided to DirectUrlLink'),
             from:      args.from || dir('No attribute provided for a DirectUrlLink'),
             transform: function(uri) { return uri ? purl(uri).segment(-1) : undefined; },
             to:        'id__in'
@@ -879,10 +872,6 @@ define([
     // (These two are generally closely related, but it is helpful to separate
     // the concepts and then generate them from the same spec)
     // This part I don't have a good name for, so I call a Dereference
-    //
-    // I'm not happy about the asymmetry. Either the dst should be a
-    // parameter of the above, or be removed from here I think.
-    // Time and wisdom will tell.
     //
     // interface Dereference = {
     //   deref :: src:Model -> dst:Collection -> Model or [Model] // if it was "to many"
@@ -928,10 +917,11 @@ define([
         return new Dereference(self);
     }
 
-    // Interface Relationship = 
-    // {
-    //   relatedCollection :: src:Collection -> dst:Collection -> Collection  // from the src it pulls data to do dst.withData( ... ) for the return value
-    //   relatedValue      :: src:Model      -> dst:Collection -> Collection or Model // from the src it filters the dst and gives the right attribute value
+    // Put them together, and you've got a relationship (but you can customize a relationship that is not built from them)
+    //
+    // interface Relationship = {
+    //   link  :: src:Collection -> dst:Collection -> Collection
+    //   deref :: src:Model      -> dst:Collection -> Model or [Model] as appropriate
     // }
     var Relationship = function(impl) {
         var self = _(this).extend(impl);
@@ -956,7 +946,7 @@ define([
         self.keyType = args.keyType || ( ((self.type === "toOne")||(self.type === "toMany")) ? "uri" : "id" );
         self.key = args.key || ( ((self.type === "toOne")||(self.type === "toMany")) ? "resource_uri" : "id" ); // The attribute on the source collection
 
-        self.relatedCollection = function(sourceCollection, destCollection) {
+        self.link = function(sourceCollection, destCollection) {
             // This should cut off computation if the actual related items has not changed
             var relatedKeys = c(function() { 
                 var attrs = _.chain(sourceCollection.models()).values().map(function(m) { return u(m.attributes()[self.key]); });
@@ -1133,7 +1123,7 @@ define([
                 throw ("No collection named " + relationship.collection);
 
             // Get the related collection and rewrite its relationships to be keyed off the proper src name
-            return relationship.rel.relatedCollection(sourceCollection, destCollection).withRelationships(function(coll, attr) {
+            return relationship.rel.link(sourceCollection, destCollection).withRelationships(function(coll, attr) {
                 return self.relatedCollection(relationship.collection, attr, coll);
             });
         };
