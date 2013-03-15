@@ -359,6 +359,49 @@ define([
         });
     });
 
+    describe("DirectDeref({from: foo}) <: Dereference", function() {
+        describe(".deref(src, dst)", function() {
+            var directDeref = ss.DirectDeref({from:'sizzle'});
+
+            it("=== dst[foo] // if dst not a Collection", function() {
+                expect(directDeref.deref(ss.LocalModel({ attributes: { sizzle: 'bizzle' } }), { bizzle: 'bazzle' }))
+                    .toBe('bazzle');
+
+                expect(directDeref.deref(ss.LocalModel({ attributes: { sizzle: 'sazzle' } }), { bizzle: 'bazzle' }))
+                    .toBe(undefined);
+            });
+
+            it("=== dst.models()[foo] // if dst instanceof Collection", function() {
+                expect(directDeref.deref(ss.LocalModel({ attributes: { sizzle: 'bizzle' } }), new ss.Collection({ models: o({ bizzle: 'bazzle' }) })))
+                    .toBe('bazzle');
+
+                expect(directDeref.deref(ss.LocalModel({ attributes: { sizzle: 'sazzle' } }), new ss.Collection({ models: o({ bizzle: 'bazzle' }) })))
+                    .toBe(undefined);
+            });
+        });
+    });
+
+    describe("FilterDeref({filter: f}) <: Dereference", function() {
+        var filterDeref = ss.FilterDeref({ filter: function(source, dest) { return source.attributes().x() == dest.x } });
+        
+        describe(".deref(src, dst)", function() {
+            
+            it("=== _(dst).filter( f(src, _) ) // more or less", function() {
+                var dst = {
+                    '/foo/1': { x: 1, y: 1 },
+                    '/foo/2': { x: 7, y: 2 },
+                    '/foo/3': { x: 2, y: 3 },
+                    '/foo/4': { x: 9, y: 4 },
+                    '/foo/5': { x: 7, y: 5 },
+                    '/foo/6': { x: 'hello', y: 6 }
+                };
+
+                expect(_(filterDeref.deref(ss.LocalModel({ attributes: { x: 7 } }), dst)).sortBy(function(foo) { return foo.y; }))
+                    .toEqual([{x:7, y:2}, {x:7, y:5}])
+            });
+        });
+    });
+
     describe("The solidstate BBWriteThroughObservable", function() {
         it("Writes back to a backbone model", function() {
             var m = new Backbone.Model(); // No need for a mock, here

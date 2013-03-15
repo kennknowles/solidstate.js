@@ -867,8 +867,66 @@ define([
             to:        'id__in'
         });
     }
-    
 
+    // Sometimes there is an array of Urls... then actually FromOneFilterLink is not
+    // suitable and you need a ToManyFilterLink
+    var MultiUrlLink = function(args) {
+        // TODO (so far they are all better expressed as FromOne for smaller urls
+    }
+    
+    // The dual to a CollectionLink, which does the multiget, is the bit that
+    // extracts just the right value from the resulting collection.
+    // (These two are generally closely related, but it is helpful to separate
+    // the concepts and then generate them from the same spec)
+    // This part I don't have a good name for, so I call a Dereference
+    //
+    // I'm not happy about the asymmetry. Either the dst should be a
+    // parameter of the above, or be removed from here I think.
+    // Time and wisdom will tell.
+    //
+    // interface Dereference = {
+    //   deref :: src:Model -> dst:Collection -> Model or [Model] // if it was "to many"
+    // }
+    var Dereference = function(implementation) {
+        var self = _(this).extend(implementation);
+
+        // ...
+    }
+
+    // A common case is that some attribute is exactly the Url to extract from the collection (or dictionary, special case)
+    var DirectDeref = function(args) {
+        var self = {},
+            from = args.from || die('Required argument `from` not provided to DirectUrlDeref');
+        
+        self.deref = function(source, destination) {
+            var to = u(source.attributes()[from]);
+
+            if ( destination instanceof Collection ) {
+                return destination.models()[to]
+            } else {
+                return destination[to];
+            }
+        }
+
+        return new Dereference(self);
+    }
+
+    // Another common case is that there is no attribute in the source, but anything matching a certain filter should go in
+    // i.e. a join, and likely a filter related to that of the query for the multiget!
+    var FilterDeref = function(args) {
+        var self   = {},
+            filter = args.filter || die('Missing required arg `filter` for FilterDeref')
+
+        self.deref = function(source, destination) {
+            var dest = destination instanceof Collection ? u(destination.models) : u(destination);
+
+            return _.chain(dest)
+                .filter(function(m) { return filter(source, m); })
+                .value();
+        }
+
+        return new Dereference(self);
+    }
 
     // Interface Relationship = 
     // {
@@ -1092,6 +1150,7 @@ define([
         Model: Model,
         Collection: Collection,
         CollectionLink: CollectionLink,
+        Dereference: Dereference,
         Relationship: Relationship,
         Api: Api,
 
@@ -1102,6 +1161,8 @@ define([
         RemoteCollection: RemoteCollection,
         FilterLink: FilterLink,
         DirectUrlLink: DirectUrlLink,
+        DirectDeref: DirectDeref,
+        FilterDeref: FilterDeref,
         RemoteApi: RemoteApi,
 
         // Helpers, exposed for testing and whatever
