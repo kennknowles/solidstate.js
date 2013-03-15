@@ -331,6 +331,34 @@ define([
         });
     });
 
+    describe("DirectUrlLink <: CollectionLink", function() {
+        it("Is a link from an attribute containing a Url to all related items in the other collection", function() {
+            var src = new ss.Collection({
+                models: o({
+                    a: ss.LocalModel({ attributes: { x: '/resource/1' } }),
+                    b: ss.LocalModel({ attributes: { x: '/resource/47' } }),
+                    c: ss.LocalModel({ attributes: { x: null } }),
+                    d: ss.LocalModel({ attributes: { x: '/resource/1' } }),
+                    e: ss.LocalModel()
+                })
+            });
+
+            var withDataSpy = jasmine.createSpy();
+            var dst = new ss.Collection({
+                withData: withDataSpy
+            });
+            
+            var directLink = ss.DirectUrlLink({
+                from: 'x',
+                target: dst
+            });
+
+            var filteredDst = directLink.linkFrom(src);
+            var dataObservable = withDataSpy.mostRecentCall.args[0];
+            expect(dataObservable()).toEqual({ id__in: ['1', '47'] });
+        });
+    });
+
     describe("The solidstate BBWriteThroughObservable", function() {
         it("Writes back to a backbone model", function() {
             var m = new Backbone.Model(); // No need for a mock, here

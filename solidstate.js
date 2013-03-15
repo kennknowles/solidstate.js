@@ -12,7 +12,8 @@ define([
     var o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed,
-        w = function(v) { return ko.isObservable(v) ? v : o(v) };
+        w = function(v) { return ko.isObservable(v) ? v : o(v) },
+        die = function(msg) { throw new Error(msg); };
     
     // Secret value that indicates something should not bother to fetch
     var NOFETCH = "solidstate.NOFETCH";
@@ -286,6 +287,8 @@ define([
     // to which it will pass itself.
     var LocalModel = function(args) {
         var self = {};
+
+        args = args || {};
         
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
@@ -811,8 +814,8 @@ define([
     //   withData :: {String: Model -> String|Number}  // A dictionary of how to build the filter
     // } 
     var FilterLink = function(args) {
-        var target   = args.target,
-            withData = args.withData;
+        var target   = args.target   || die('No target provided to FilterLink'),
+            withData = args.withData || die('No withData provided to FilterLink');
 
         self.linkFrom = function(source) {
             // Build a compacted and uniq'd set of a data to minimize jitter
@@ -836,20 +839,36 @@ define([
         return new CollectionLink(self);
     }
 
-    // And the most common filterLink is a single field
+    // Another very common case is building a filter on the other end from the source object
     var FromOneFilterLink = function(args) {
-        var from      = args.from      || 'id',
+        var target    = args.target    || die('No target provided to FromOneFilterLink'),
+            from      = args.from      || 'id',
             transform = args.transform || function(x) { return x; },
             to        = args.to;
 
         var withData = {};
-        withData[to] = function(model) { return model.attributes()[from](); }
+        withData[to] = function(model) { return transform(u(model.attributes()[from])); };
         
         return FilterLink({
-            target: args.target,
+            target: target,
             withData: withData
         })
     }
+    
+    // Of which the most most common case is a direct URL in the source object,
+    // but we must do a bulk operation and we don't yet support tastypie-esque multiget,
+    // so the assumption, to default to small(er) querystrings, is that the id
+    // can be parsed out of the Url as the last component, and filtered via id__in
+    var DirectUrlLink = function(args) {
+        return FromOneFilterLink({
+            target:    args.target || die('No target provided to DirectUrlLink'),
+            from:      args.from || dir('No attribute provided for a DirectUrlLink'),
+            transform: function(uri) { return uri ? purl(uri).segment(-1) : undefined; },
+            to:        'id__in'
+        });
+    }
+    
+
 
     // Interface Relationship = 
     // {
@@ -1082,6 +1101,7 @@ define([
         RemoteModel: RemoteModel,
         RemoteCollection: RemoteCollection,
         FilterLink: FilterLink,
+        DirectUrlLink: DirectUrlLink,
         RemoteApi: RemoteApi,
 
         // Helpers, exposed for testing and whatever
