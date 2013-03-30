@@ -134,6 +134,36 @@ define([
             expect(u(u(args.attributes).foo)).toBe('bizzle');
         });
 
+        it("When errors occur, stores them in attributeErrors() and returns to the initial state", function() {
+            var wrapper = {
+                newModel: function(args) {
+                    return {
+                        state: o('error'),
+                        attributeErrors: o({'__all__': 'Die'})
+                    };
+                }
+            };
+            spyOn(wrapper, 'newModel').andCallThrough();
+
+            var m = ss.NewModel({
+                name: 'me',
+                attributes: {
+                    foo: 'baz'
+                },
+                create: wrapper.newModel
+            });
+
+            expect(wrapper.newModel).not.toHaveBeenCalled();
+            m.attributes().foo('bizzle');
+            m.save();
+            
+            var args = wrapper.newModel.mostRecentCall.args[0];
+            expect(args.name).toBe('me');
+            expect(u(u(args.attributes).foo)).toBe('bizzle');
+
+            expect(m.attributeErrors()).toEqual({'__all__': 'Die'});
+        });
+
         it("Prior to a save, can still have withSubresourcesFrom proxy its attributes", function() {
             var wrapper = {
                 newModel: function(args) {

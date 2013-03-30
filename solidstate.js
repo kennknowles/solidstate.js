@@ -34,6 +34,16 @@ define([
     // Really poor/basic serialization
     var toJValue = function(value) { return JSON.parse(JSON.stringify(value)) };
 
+    // Random Tastypie support code
+    var adjustTastypieError = function(err) {
+        // Sometimes it is a dictionary keyed by class name, with a list, other times, just a one-element dict with {"error": <some string>}
+        if ( _(_(err).values()[0]).isString() ) {
+            return {'__all__': _(err).values()}
+        } else {
+            return _(err).values()[0];
+        }
+    }
+
     // type observableLike = a | ko.observable a
 
     // utility Attributes, a dictionary where setting the whole dictionary actually hits each observable,
@@ -394,14 +404,7 @@ define([
                     if (nonce === myNonce) {
                         // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
                         var err = JSON.parse(xhr.responseText);
-
-                        // The error dictionaries passed back from Tastypie are somewhat erratic. Sometimes there is a single key "error" with a string,
-                        // other times it is a list per attribute under a key that is the class name.
-                        if ( _(_(err).values()[0]).isString() ) {
-                            self.attributeErrors({'__all__': _(err).values()})
-                        } else {
-                            self.attributeErrors(_(err).values()[0])
-                        }
+                        self.attributeErrors(adjustTastypieError(err));
                         self.state('ready');
                     }
                 }
@@ -716,8 +719,8 @@ define([
                             modelHoldingPen.state('ready'); 
                         },
                         error: function(model, xhr, options) {
-                            // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
-                            modelHoldingPen.attributeErrors(_(JSON.parse(xhr.responseText)).values()[0]); // currently the dictionary has a key for the class name (or something)
+                            var err = JSON.parse(xhr.responseText);
+                            modelHoldingPen.attributeErrors(adjustTastypieError(err));
                             modelHoldingPen.state('error');
                         }
                     });
