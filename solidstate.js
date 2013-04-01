@@ -4,8 +4,8 @@ define([
     'underscore',
     'backbone', 
     'knockout',
-    'purl',
-], function($, _, Backbone, ko, purl) {
+    'URIjs',
+], function($, _, Backbone, ko, URI) {
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
@@ -789,7 +789,7 @@ define([
 
         self.withParam = function(additionalParam) {
             var newUrl = c(function() {
-                var parsedUrl = purl(u(self.url));
+                var parsedUrl = URI(u(self.url));
                 var newParam = _({}).extend( _(parsedUrl.param()).omit(""), u(additionalParam))
                 var protocolPrefix = parsedUrl.attr('protocol') ? (parsedUrl.attr('protocol') + '://') : '';
 
@@ -833,6 +833,8 @@ define([
     //   withData :: {String: Model -> String|Number}  // A dictionary of how to build the filter
     // } 
     var FilterLink = function(args) {
+        var self = {};
+
         var withData = args.withData || die('No withData provided to FilterLink');
 
         self.link = function(source, target) {
@@ -884,7 +886,7 @@ define([
     var DirectUrlLink = function(args) {
         return FromOneFilterLink({
             from:      args.from || dir('No attribute provided for a DirectUrlLink'),
-            transform: function(uri) { return uri ? purl(uri).segment(-1) : undefined; },
+            transform: function(uri) { return uri ? URI(uri).segment(-1) : undefined; },
             to:        'id__in'
         });
     }
@@ -1014,7 +1016,7 @@ define([
                 if ( self.keyType === 'id' ) {
                     // Nothing
                 } else if ( self.keyType === 'uri' ) {
-                    attrs = _(attrs).map(function(v) { return purl(v).segment(-1); });
+                    attrs = _(attrs).map(function(v) { return URI(v).segment(-1); });
                 } else if ( _(self.keyType).isFunction() ) {
                     attrs = _(attrs).map(self.keyType);
                 } else {

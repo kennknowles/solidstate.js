@@ -1,8 +1,10 @@
 define([
+    'underscore',
+    'backbone',
     'knockout', 
     'solidstate',
     'jasmine',
-], function(ko, ss) {
+], function(_, Backbone, ko, ss) {
     var o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed;

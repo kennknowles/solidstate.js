@@ -11,7 +11,9 @@ pids
 logs
 results
 
+# Node / NPM
 npm-debug.log
+/node_modules
 
 # Emails
 *~
