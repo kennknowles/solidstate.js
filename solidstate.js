@@ -278,13 +278,30 @@ define([
 
             return withAttrs.withState(c(function() {
                 for (var field in subresourceCollections) {
-                    if (self.attributes()[field]() && !withAttrs.attributes()[field]()) {
+                    if ( !self.attributes()[field]() ) 
+                        return 'ready';
+
+                    var val = withAttrs.attributes()[field]()
+
+                    if ( !val )
                         return "fetching";
-                    } else {
-                        return "ready";
+
+                    if ( _(val).has('state') && (val.state() !== 'ready') ) 
+                        return val.state();
+
+                    if ( _(val).isArray() ) {
+                        for (var i in val) {
+                            if ( _(val[i]).has('state') && (val[i].state() !== 'ready') )
+                                return val[i].state();
+                        }
+                        return 'ready';
                     }
+
+                    return "ready";
                 }
             }));
+
+            
         }
 
         self.toString = function() { return 'Model()'; };
@@ -1152,10 +1169,12 @@ define([
             if (!relationship) 
                 throw ("No known relationship for " + sourceName + "." + attr)
 
-            var destCollection = self.collections()[relationship.collection].withName(sourceName + '.' + attr);
+            var destCollection = self.collections()[relationship.collection];
 
             if ( !destCollection ) 
                 throw ("No collection named " + relationship.collection);
+
+            destCollection = destCollection.withName(sourceName + '.' + attr);
 
             // Get the related collection and rewrite its relationships to be keyed off the proper src name
             return relationship.rel.link(sourceCollection, destCollection).withRelationships(function(coll, attr) {
