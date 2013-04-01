@@ -1,6 +1,10 @@
 SolidState.js
 =============
 
+https://github.com/kennknowles/solidstate.js
+
+[![Build status](https://travis-ci.org/kennknowles/solidstate.js.png)](https://travis-ci.org/kennknowles/solidstate.js)
+
 A high-level, fluent, state-machine-based, automatic dependency-driven REST client library for Javascript.
 
 Quick Intro
