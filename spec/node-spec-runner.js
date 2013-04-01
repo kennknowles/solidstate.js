@@ -21,6 +21,17 @@ for (key in jasmine) {
 }
 
 requirejs(['spec/spec'], function () {
-    jasmine.getEnv().addReporter(new jasmine.TerminalReporter({ print: util.print, color: true }));
+    var terminalReporter = new jasmine.TerminalReporter({ 
+        print: util.print, 
+        color: true,
+        onComplete: function() {
+            if ( this.failures_.length > 0 )
+                process.exit(1);
+            else
+                process.exit(0);
+        }
+    });
+
+    jasmine.getEnv().addReporter(terminalReporter);
     jasmine.getEnv().execute();
 });
