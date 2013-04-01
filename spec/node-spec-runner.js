@@ -10,9 +10,6 @@ requirejs.config({
 jasmine = require('jasmine-node');
 util = require('util');
 
-// Mutates global jasmine object :-/
-require('jasmine-reporters');
-
 // map jasmine methods to global namespace
 for (key in jasmine) {
     if (jasmine[key] instanceof Function) {
