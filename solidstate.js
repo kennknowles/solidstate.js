@@ -204,7 +204,16 @@ define([
                     for (var field in updatedAttributes) {
                         if ( ! _(updatedAttributes[field]).isString() ) {
                             if ( _(subresourceCollections).has(field) ) {
-                                updatedAttributes[field] = updatedAttributes[field].resource_uri;
+                                var obj = u(updatedAttributes[field]);
+
+                                if ( !obj ) { }
+                                    // OK do nothing
+                                else if ( _(obj).has('resource_uri') )
+                                    updatedAttributes[field] = obj.resource_uri;
+                                else if ( _(obj).has('attributes') )
+                                    updatedAttributes[field] = u( u(obj).attributes ).resource_uri
+                                else
+                                    die('Could not extract a resource_uri from ' + u(obj).toString());
                             }
                         }
                     }
