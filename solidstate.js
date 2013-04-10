@@ -757,7 +757,7 @@ define([
         };
         
         self.fetch = function() {
-            if (self.debug) console.log(self.name, '-->', self.url(), '?', URI().query(self.data()).query());
+            if (self.debug) console.log(self.name, '-->', self.url(), '?', u(self.data)); //URI().query(self.data()).query());
 
             var _data = _({}).extend(self.data());
             if (_(_data).any(function(v) { return v === NOFETCH; })) {
@@ -800,9 +800,8 @@ define([
             var newUrl = c(function() {
                 var parsedUrl = URI(u(self.url));
                 var newParam = _({}).extend( parsedUrl.query(true), u(additionalParam))
-                var protocolPrefix = parsedUrl.protocol() ? (parsedUrl.protocol() + '://') : '';
 
-                return parsedUrl.query(newParam);
+                return parsedUrl.query(newParam).toString();
             });
 
             return RemoteCollection({
@@ -895,7 +894,15 @@ define([
     var DirectUrlLink = function(args) {
         return FromOneFilterLink({
             from:      args.from || dir('No attribute provided for a DirectUrlLink'),
-            transform: function(uri) { return uri ? URI(uri).segment(-1) : undefined; },
+            transform: function(uri) { 
+                if (!uri) return uri; // Preserve null and undefined
+
+                // If it ends in a slash, grab the second-to-last segment for now...
+                if ( uri[uri.length - 1] === '/' )
+                    return URI(uri).segment(-2);
+                else
+                    return URI(uri).segment(-1);
+            },
             to:        'id__in'
         });
     }
@@ -1025,7 +1032,14 @@ define([
                 if ( self.keyType === 'id' ) {
                     // Nothing
                 } else if ( self.keyType === 'uri' ) {
-                    attrs = _(attrs).map(function(v) { return URI(v).segment(-1); });
+                    attrs = _(attrs).map(function(v) { 
+
+                        // URIjs does not strip the last slash, though we want the last nonempty segment. Hack it.
+                        if ( v[v.length-1] == '/' )
+                            return URI(v).segment(-2);
+                        else
+                            return URI(v).segment(-1); 
+                    });
                 } else if ( _(self.keyType).isFunction() ) {
                     attrs = _(attrs).map(self.keyType);
                 } else {
