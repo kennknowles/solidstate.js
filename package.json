@@ -21,12 +21,14 @@
     "dependencies": {
         "amdefine": ">=0.0.4",
         "backbone": ">=0.9",
-        "jasmine-node": ">=1.2",
         "jquery": ">=1.8",
         "knockout": ">=2.2",
         "requirejs": ">=2.0",
         "underscore":  ">=1.4",
         "URIjs": ">=1.10"
+    },
+    "devDependencies": {
+        "jasmine-node": ">=1.2"
     },
     "files": ["solidstate.js"],
     "main": "solidstate",
