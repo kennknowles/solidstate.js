@@ -1,6 +1,6 @@
 {
     "name": "solidstate",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "A high-level, fluent, state-machine-based, automatic dependency-driven REST client library for Javascript.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
@@ -28,11 +28,13 @@
         "URIjs": ">=1.10"
     },
     "devDependencies": {
-        "jasmine-node": ">=1.2"
+        "mocha": ">=1.9.0",
+        "chai": ">=1.5.0",
+        "sinon": ">=1.6.0"
     },
     "files": ["solidstate.js"],
     "main": "solidstate",
     "scripts": {
-        "test": "node ./spec/node-spec-runner.js"
+        "test": "mocha ./spec/mocha-spec-runner.js"
     }
 }

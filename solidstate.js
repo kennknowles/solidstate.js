@@ -1,12 +1,11 @@
 "use strict";
 if (typeof define !== 'function') { var define = require('amdefine')(module) }
 define([ 
-    'jquery',
     'underscore',
     'backbone', 
     'knockout',
     'URIjs',
-], function($, _, Backbone, ko, URI) {
+], function(_, Backbone, ko, URI) {
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
@@ -758,7 +757,7 @@ define([
         };
         
         self.fetch = function() {
-            if (self.debug) console.log(self.name, '-->', self.url(), '?', $.param(self.data(), true));
+            if (self.debug) console.log(self.name, '-->', self.url(), '?', URI().query(self.data()).query());
 
             var _data = _({}).extend(self.data());
             if (_(_data).any(function(v) { return v === NOFETCH; })) {

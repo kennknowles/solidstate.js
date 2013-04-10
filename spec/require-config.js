@@ -1,36 +1,33 @@
 requirejs.config({
     // The RequireJS docs advise against configuring paths to node_modules for use *in node*
-    // but I for use *in the browser*, I do not know a better way.
+    // but I do it for use *in the browser*, because it is just the test suite
     paths: {
         "solidstate"          : "../solidstate",
-
-        "backbone"            : "vendor/backbone-0.9.10",
-        "jquery"              : "vendor/jquery-1.8.2",
-        "jasmine"             : "vendor/jasmine-1.3.1/jasmine",
-        "jasmine-html"        : "vendor/jasmine-1.3.1/jasmine-html",
-        "knockout"            : "vendor/knockout-2.2.0",
-        "underscore"          : "vendor/underscore-1.4.3",
-        "URIjs"               : "vendor/URIjs-1.10.0/URI",
-
-        // These *should* work already since URIjs requires ./punycode, etc, but they don't...
-        "punycode"            : "vendor/URIjs-1.10.0/punycode",
-        "IPv6"                : "vendor/URIjs-1.10.0/IPv6",
-        "SecondLevelDomains"  : "vendor/URIjs-1.10.0/SecondLevelDomains"
     },
-    urlArgs: "v=" + (new Date).getTime(),
+    packages: [
+        { "name": "backbone",    "main": "backbone.js",                      "location": "../node_modules/backbone"    },
+        { "name": "chai",        "main": "chai.js",                          "location": "../node_modules/chai"        },
+        { "name": "knockout",    "main": "build/output/knockout-latest.js",  "location": "../node_modules/knockout"    },
+        { "name": "mocha",       "main": "mocha.js",                         "location": "../node_modules/mocha"       },
+        { "name": "sinon",       "main": "pkg/sinon.js",                     "location": "../node_modules/sinon"       },
+        { "name": "mocha",       "main": "mocha.js",                         "location": "../node_modules/mocha"       },
+        { "name": "underscore",  "main": "underscore.js",                    "location": "../node_modules/underscore"  },
+        { "name": "URIjs",       "main": "URI.js",                           "location": "../node_modules/URIjs/src"   },
+    ],
     shim: {
-        "underscore": {
-            exports: "_"
+        "backbone": { 
+            exports: "Backbone",
+            deps: ["underscore"]
         },
-        "backbone": {
-            deps: ["underscore", "jquery"],
-            exports: "Backbone"
+        "mocha": { 
+            exports: "mocha" 
         },
-        "jasmine": {
-            exports: "jasmine"
+        "sinon": {
+            exports: "sinon"
         },
-        "jasmine-html": {
-            deps: ["jasmine"]
+        "underscore": { 
+            exports: "_" 
         }
-    }
+    },
+    urlArgs: "v=" + (new Date).getTime()
 });
