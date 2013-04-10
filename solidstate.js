@@ -800,10 +800,10 @@ define([
         self.withParam = function(additionalParam) {
             var newUrl = c(function() {
                 var parsedUrl = URI(u(self.url));
-                var newParam = _({}).extend( _(parsedUrl.param()).omit(""), u(additionalParam))
-                var protocolPrefix = parsedUrl.attr('protocol') ? (parsedUrl.attr('protocol') + '://') : '';
+                var newParam = _({}).extend( parsedUrl.query(true), u(additionalParam))
+                var protocolPrefix = parsedUrl.protocol() ? (parsedUrl.protocol() + '://') : '';
 
-                return protocolPrefix + parsedUrl.attr('path') + '?' + $.param(newParam, true);
+                return parsedUrl.query(newParam);
             });
 
             return RemoteCollection({
