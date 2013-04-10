@@ -28,7 +28,7 @@
         "URIjs": ">=1.10"
     },
     "files": ["solidstate.js"],
-    "main": ["solidstate"],
+    "main": "solidstate",
     "scripts": {
         "test": "node ./spec/node-spec-runner.js"
     }
