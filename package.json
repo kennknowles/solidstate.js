@@ -19,6 +19,7 @@
         "url": "https://github.com/kennknowles/solidstate.js"
     },
     "dependencies": {
+        "amdefine": ">=0.0.4",
         "backbone": ">=0.9",
         "jasmine-node": ">=1.2",
         "jquery": ">=1.8",
