@@ -288,7 +288,7 @@ define([
             return withAttrs.withState(c(function() {
                 for (var field in subresourceCollections) {
                     if ( !self.attributes()[field]() ) 
-                        return 'ready';
+                        continue;
 
                     var val = withAttrs.attributes()[field]()
 
@@ -303,11 +303,9 @@ define([
                             if ( _(val[i]).has('state') && (val[i].state() !== 'ready') )
                                 return val[i].state();
                         }
-                        return 'ready';
                     }
-
-                    return "ready";
                 }
+                return "ready";
             }));
 
             
