@@ -1240,6 +1240,7 @@ define([
         BBWriteThroughObservable: BBWriteThroughObservable,
 
         // Misc 
-        NOFETCH: NOFETCH
+        NOFETCH: NOFETCH,
+        when: when
     }
 });
