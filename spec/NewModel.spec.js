@@ -110,7 +110,7 @@ define([
             expect(args.name).to.equal('me');
             expect(u(u(args.attributes).foo)).to.equal('bizzle');
 
-            when(m.entersState('initial'),
+            when(m.state.reaches('initial'),
                  function() {
                      expect(m.attributeErrors()).to.deep.equal({'__all__': 'Die'});
                      done();
@@ -188,7 +188,7 @@ define([
             expect(m.state()).to.equal('saving');
             savingDeferred.resolve();
             
-            when(m.entersState('ready'), function() {
+            when(m.state.reaches('ready'), function() {
                 expect(m.attributes().foo()).to.equal('bizzle');
                 expect(m.state()).to.equal('ready');
                 m.attributes().foo('boing');

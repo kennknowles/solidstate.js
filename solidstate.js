@@ -141,6 +141,35 @@ define([
         });
     };
 
+    var State = function(underlyingObservable) {
+        var self = underlyingObservable || ko.observable('initial');
+
+        var stateDeferreds = {};
+        var resolveStateDeferred = function() {
+            var state = self.peek();
+
+            if ( _(stateDeferreds).has(state) ) {
+                stateDeferreds[state].resolve();
+                delete stateDeferreds[state];
+            }
+        };
+
+        self.reaches = function(goalState) {
+            if ( !_(stateDeferreds).has(goalState) ) {
+                stateDeferreds[goalState] = when.defer();
+            }
+            var promise = stateDeferreds[goalState].promise;
+            resolveStateDeferred();
+            return promise;
+        };
+
+        self.subscribe(function() {
+            resolveStateDeferred();
+        });
+
+        return self;
+    }
+
     // interface Model =
     // {
     //   state           :: observable ("intial" | "ready" | "fetching" | "saving")  // read only
@@ -191,21 +220,7 @@ define([
 
         self.save = function() { implementation.save(); return self; };
 
-        var stateDeferreds = {};
-        self.entersState = function(goalState) {
-            if ( !_(stateDeferreds).has(goalState) ) {
-                stateDeferreds[goalState] = when.defer();
-            }
-            return stateDeferreds[goalState].promise;
-        };
-        self.state.subscribe(function(newState) {
-            _(stateDeferreds).each(function (deferred, goalState) {
-                if ( goalState === newState )
-                    deferred.resolve();
-                else
-                    deferred.reject(newState);
-            });
-        });
+        self.state = State(implementation.state);
 
         self.attr = function(field) {
             return c({
@@ -576,6 +591,8 @@ define([
         self.relatedCollection = function(attr) { return self.relationships[attr].link(self); };
 
         self.fetch = function() { implementation.fetch(); return self; };
+
+        self.state = State(implementation.state);
 
         //self.withData = function(data) { return new Collection(implementation.withData(data)); }
         //self.withName = function(name) { return new Collection(implementation.withName(name)); }
@@ -1041,22 +1058,8 @@ define([
         var self = _(this).extend(impl);
 
         self.fetch = function() { impl.fetch(); return self; };
-        
-        var stateDeferreds = {};
-        self.entersState = function(goalState) {
-            if ( !_(stateDeferreds).has(goalState) ) {
-                stateDeferreds[goalState] = when.defer();
-            }
-            return stateDeferreds[goalState].promise;
-        };
-        self.state.subscribe(function(newState) {
-            _(stateDeferreds).each(function (deferred, goalState) {
-                if ( goalState === newState )
-                    deferred.resolve();
-                else
-                    deferred.reject(newState);
-            });
-        });
+
+        self.state = State(impl.state);
     };
         
     // Api constructor from url
@@ -1202,6 +1205,7 @@ define([
         // References
         ToOneReference: ToOneReference,
         ToManyReference: ToManyReference,
+        FilterReference: FilterReference,
         JoinReference: JoinReference,
 
         // Apis
