@@ -399,12 +399,12 @@ define([
                     return models; 
                 })
             });
-            
+
             return RemoteModel({
                 name: self.name + '.' + attr,
                 url: self.attributes()[attr],
                 debug: self.debug,
-                relationships: self.relationships(justThisModelCollection, attr).relationships
+                relationships: self.relationships(attr).link.resolve(justThisModelCollection).relationships
             });
         };
         
@@ -588,7 +588,7 @@ define([
     var Collection = function(implementation) {
         var self = _(this).extend(implementation);
         
-        self.relatedCollection = function(attr) { return self.relationships[attr].link(self); };
+        self.relatedCollection = function(attr) { return self.relationships(attr).link.resolve(self); };
 
         self.fetch = function() { implementation.fetch(); return self; };
 
@@ -838,7 +838,7 @@ define([
         return new Collection(self);
     };
 
-    // Link = Collection -> Collection
+    // Link = { resolve: Collection -> Collection }
     //
     // The simplest sort of link is a URI, a pointer. However, even a
     // URI may be relative, hence takes a "source" location as an
@@ -1083,17 +1083,28 @@ define([
         self.collections = o({});
         self.debug = args.debug || false;
         self.name = args.name || 'solidstate.RemoteApi';
-        var relationships = {};
+        self.relationships = {};
+
+        var linkToNamedCollection = function(name) {
+            return new Link({
+                resolve: function(src) {
+                    return LinkToCollection(self.collections()[name]).resolve(src);
+                }
+            });
+        };
         
-        // underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
+        // Relationships default to UrlLink and ToOneReference
+        //
+        // Underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
         _(args.relationships).each(function(relationshipsByDest, sourceName) {
             _(relationshipsByDest).each(function(relationshipParams, attr) {
-                relationships[sourceName] = relationships[sourceName] || {};
+                self.relationships[sourceName] = self.relationships[sourceName] || {};
 
-                relationships[sourceName][attr] = {
+                self.relationships[sourceName][attr] = {
                     collection: relationshipParams.collection,
-                    rel: relationshipParams.rel
-                };
+                    link: relationshipParams.link || UrlLink({from: attr}, linkToNamedCollection(relationshipParams.collection) ),
+                    deref: relationshipParams.deref || ToOneReference({from: attr})
+                }
             });
         });
 
@@ -1121,7 +1132,7 @@ define([
                         debug: self.debug,
                         url: uri,
                         schema_url: metadata.schema,
-                        relationships: function(coll, attr) { return self.relatedCollection(name, attr, coll); }
+                        relationships: function(attr) { return self.relationships[name][attr]; }
                     });
                     collectionsDidChange = true;
                 }
@@ -1167,8 +1178,8 @@ define([
             destCollection = destCollection.withName(sourceName + '.' + attr);
 
             // Get the related collection and rewrite its relationships to be keyed off the proper src name
-            return relationship.rel.link(sourceCollection, destCollection).withRelationships(function(coll, attr) {
-                return self.relatedCollection(relationship.collection, attr, coll);
+            return relationship.link(sourceCollection, destCollection).withRelationships(function(attr) {
+                return self.relationships[relationship.collection][attr];
             });
         };
 
