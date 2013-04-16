@@ -1,65 +1,59 @@
-"use strict";
-if (typeof define !== 'function') { var define = require('amdefine')(module) }
+/* jshint -W070 */
+/* jshint -W064 */
+/* jshint -W025 */
+/* jshint -W030 */
+if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
-    'underscore',
     'backbone', 
+    //'contracts.js',
     'knockout',
+    'underscore',
     'URIjs',
-], function(_, Backbone, ko, URI) {
+    'when',
+], function(Backbone, /* contracts, */ ko, _, URI, when) {
+    'use strict';
+    
+    //contracts.enabled(false);
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
     var o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed,
-        w = function(v) { return ko.isObservable(v) ? v : o(v) },
+        w = function(v) { return ko.isObservable(v) ? v : o(v); },
         die = function(msg) { throw new Error(msg); };
     
     // Secret value that indicates something should not bother to fetch
     var NOFETCH = "solidstate.NOFETCH";
 
-    var when = function(thingWithState, goalState, callback) {
-        if (thingWithState.state.peek() === goalState) {
-            callback();
-        } else {
-            var subscription = thingWithState.state.subscribe(function() {
-                if (thingWithState.state.peek() === goalState) {
-                    subscription.dispose();
-                    callback();
-                }
-            });
-        }
-    };
-
     // Really poor/basic serialization
-    var toJValue = function(value) { return JSON.parse(JSON.stringify(value)) };
+    var toJValue = function(value) { return JSON.parse(JSON.stringify(value)); };
 
     // Random Tastypie support code
     var adjustTastypieError = function(err) {
         // Sometimes it is a dictionary keyed by class name, with a list, other times, just a one-element dict with {"error": <some string>}
         if ( _(_(err).values()[0]).isString() ) {
-            return {'__all__': _(err).values()}
+            return {'__all__': _(err).values()};
         } else {
             return _(err).values()[0];
         }
-    }
+    };
 
     // type observableLike = a | ko.observable a
 
-    // utility Attributes, a dictionary where setting the whole dictionary actually hits each observable,
-    // and extension is easy, as well as overlay.
-    // In particular it DOES NOT unwrap observable attributes when they are added, since they
-    // may be wacky computed observables.
-
+    // Attributes
+    //
+    // An observable dictionary with the property that writing the whole dictionary
+    // actually writes individually to each attribute.
+    //
     // args :: {
     //   attributes :: String ->
     // }
     var Attributes = function(args) {
         args = args || {};
-        var self = {};
         var makeAttribute = args.makeAttribute || function(key, value) { return ko.observable(value); };
 
-        var actualAttributes = o({})
+        var actualAttributes = o({});
 
         var wrappedAttributes = c({
             read: function() {
@@ -91,18 +85,73 @@ define([
         }
 
         return wrappedAttributes;
-    }
+    };
+    
+    // Models
+    //
+    // An observable dictionary with the property that writing the whole dictionary
+    // actually writes the *attributes* of each item in the dictionary, (so that
+    // subscriptions to the models are maintained)
+    //
+    // args :: {
+    //   models :: String -> Model
+    // }
+    var Models = function(args) {
+        args = args || {};
+
+        var actualModels = o({});
+
+        var wrappedModels = c({
+            read: function() {
+                return actualModels();
+            },
+            write: function(_newModels) {
+                var keysChanged = false;
+                var nextModels = _(actualModels.peek()).clone();
+                var newModels = u(_newModels);
+
+                _(newModels).each(function(model, uri) {
+                    if (_(nextModels).has(uri)) {
+                        nextModels[uri].attributes(model.attributes);
+                    } else {
+                        nextModels[uri] = model;
+                        keysChanged = true;
+                    }
+                });
+                
+                // Note that there is currently no way to remove an attribute (because that is a weird thing to do and the semantics aren't clean)
+
+                if (keysChanged)
+                    actualModels(nextModels);
+            }
+        });
+
+        if ( args.models ) {
+            wrappedModels( args.models );
+        }
+        
+        return wrappedModels;
+    };
+    
+    //
+    var transformed = function(underlyingObservable, args) {
+        return c({
+            read: function() { return args.read ? args.read(underlyingObservable()) : underlyingObservable(); },
+            write: function(v) { return args.write ? underlyingObservable(args.write(v)) : underlyingObservable(v); }
+        });
+    };
 
     // interface Model =
     // {
     //   state           :: observable ("intial" | "ready" | "fetching" | "saving")  // read only
     //   attributes      :: observable {String: observable *}
     //   attributeErrors :: observable { String -> observable [String] } // for validation or backend errors, etc
+    //   attr            :: String -> observable // Returns an observable that will read/write the attribute ONLY if present
     //
     //   fetch      :: () -> ()
     //   save       :: () -> ()
     //
-    //   relationships     :: (String, Collection) -> Collection
+    //   relationships     :: String -> Relationship
     // }
     //
     // The state transitions thusly, with any network request
@@ -121,8 +170,8 @@ define([
     // {
     //   ... any fields from implementation are copied over ...
     //   withState             :: observableLike ("ready"|"fetching"|...) -> Model    // takes the provided state unless it is "ready" then takes current
-    //   withAttributes        :: observableLike {String: observableLike ??} -> Model  // Overlays those attributes
-    //   withSubresourcesFrom :: {String: Collection} -> Model                      // Plugs in models from the collection for URLs, else state is "fetching"
+    //   withAttributes        :: observableLike {String: observableLike *} -> Model  // Overlays those attributes
+    //   withSubresourcesFrom  :: {String: Collection} -> Model                       // Plugs in models from the collection using know relationships or sensible defaults
     //
     //   relatedModel      :: String -> Model       // Just looks up by URL
     //   relatedCollection :: String -> Collection  // Looks up via relationships
@@ -136,16 +185,51 @@ define([
 
         if ( typeof self.attributes === 'undefined' ) self.attributes = o({});
 
+        if ( typeof self.relationships === 'undefined' ) self.relationships = function(field) { return undefined; };
+
         self.fetch = function() { implementation.fetch(); return self; };
 
         self.save = function() { implementation.save(); return self; };
+
+        var stateDeferreds = {};
+        self.entersState = function(goalState) {
+            if ( !_(stateDeferreds).has(goalState) ) {
+                stateDeferreds[goalState] = when.defer();
+            }
+            return stateDeferreds[goalState].promise;
+        };
+        self.state.subscribe(function(newState) {
+            _(stateDeferreds).each(function (deferred, goalState) {
+                if ( goalState === newState )
+                    deferred.resolve();
+                else
+                    deferred.reject(newState);
+            });
+        });
+
+        self.attr = function(field) {
+            return c({
+                read: function() {
+                    var attrs = self.attributes();
+                    return _(attrs).has(field) ? attrs[field]() : undefined;
+                },
+                write: function(v) {
+                    var attrs = self.attributes.peek();
+                    if ( _(attrs).has(field) )
+                        attrs[field](v);
+                    else
+                        die('Illegal write to (nonexistant) proxied attribute `' + field + '`');
+                }
+            });
+        };
 
         self.relatedCollection = function(attr) { 
             var justThisModelCollection = new Collection({ 
                 state: self.state, 
                 models: c(function() { return [self]; })
             });
-            return self.relationships(justThisModelCollection, attr); 
+
+            return self.relationships(attr).link(justThisModelCollection);
         };
 
         self.toJSON = function() {
@@ -154,14 +238,9 @@ define([
             return result;
         };
 
-        self.when = function(goalState, callback) {
-            when(self, goalState, callback);
-            return self; // just to be fluent
-        };
-
         self.withState = function(state) {
             var impl = _({}).extend(self, {
-                state: c(function() { return state() === 'ready' ? self.state() : state() })
+                state: c(function() { return state() === 'ready' ? self.state() : state(); })
             });
 
             return new Model(impl);
@@ -197,100 +276,23 @@ define([
         
         // Plugs in for the subresources
         self.withSubresourcesFrom = function(subresourceCollections) {
-            var augmentedAttributes = c({
-                write: function(_updatedAttributes) {
-                    var updatedAttributes = _(_updatedAttributes).clone();
+            var overlayedAttributes = {};
 
-                    for (var field in updatedAttributes) {
-                        if ( ! _(updatedAttributes[field]).isString() ) {
-                            if ( _(subresourceCollections).has(field) ) {
-                                var obj = u(updatedAttributes[field]);
+            _(subresourceCollections).each(function(subcoll, field) {
+                var relationship = self.relationships(field) || { deref: ToOneReference({from:field}) };
 
-                                if ( !obj ) { }
-                                    // OK do nothing
-                                else if ( _(obj).has('resource_uri') )
-                                    updatedAttributes[field] = obj.resource_uri;
-                                else if ( _(obj).has('attributes') )
-                                    updatedAttributes[field] = u( u(obj).attributes ).resource_uri
-                                else
-                                    die('Could not extract a resource_uri from ' + u(obj).toString());
-                            }
-                        }
-                    }
-                    
-                    // Note that this does not properly go through the individual observables.... don't use it?
-                    self.attributes(updatedAttributes); // Avoid writing the obj to underlying as that would screw it up
-                },
-                read: function() {
-                    var underlyingAttributes = self.attributes();
-                    var overlayedAttributes = {};
-
-                    _(subresourceCollections).each(function(subcoll, field) {
-                        // Force the attribute to exist, so it can be properly proxied
-                        if ( !_(self.attributes()).has(field) ) {
-                            var newAttr = {};
-                            newAttr[field] = o(undefined);
-                            self.attributes(newAttr); // Now this only extends anyhow _(underlyingAttributes).extend(newAttr) );
-                        }
-
-                        var underlyingAttribute = self.attributes()[field];
-
-                        if ( typeof underlyingAttribute === 'undefined' ) {
-                            console.log('WARNING: attempt to link to subresource via undefined attribute', field);
-                            return;
-                        }
-
-                        overlayedAttributes[field] = c({
-                            read: function() {
-                                var subcoll = subresourceCollections[field];
-                                var models = _(subcoll).has('models') ? u(subcoll.models) : u(subcoll);
-                                var val = underlyingAttribute();
-
-                                if ( _(val).isString() || _(val).isNumber() ) {
-                                    var found = models[val];
-                                    if ( !found ) {
-                                        return undefined;
-                                    } else if ( _(found).has('state') && (u(found.state) !== 'ready') ) {
-                                        return null; // Note that we *could* return the unready thing...
-                                    } else {
-                                        return found;
-                                    }
-                                } else if ( _(val).isArray() ) {
-                                    var newVal = [];
-                                    for (var i in val) {
-                                        var found = models[val[i]];
-                                        if ( found ) 
-                                            newVal.push(found)
-                                        else
-                                            return null;
-                                    }
-                                    return newVal;
-                                }
-                            },
-
-                            write: function(model) {
-
-                                // Supports writing raw values, too, at user's risk
-                                if ( _(model).isString() || _(model).isNumber() || _(model).isNull() ) {
-                                    underlyingAttribute(model);
-                                } else {
-                                    underlyingAttribute(model.attributes().resource_uri()); // TODO: make resource_uri configured not hardcoded
-                                }
-                            }
-                        });
-                    });
-                    return overlayedAttributes;
-                }
+                // An observable that will track when the underlying attribute comes into being
+                overlayedAttributes[field] = relationship.deref(self, subcoll);
             });
-                
-            var withAttrs = self.withAttributes(augmentedAttributes);
 
-            return withAttrs.withState(c(function() {
+            var augmentedSelf = self.withAttributes(overlayedAttributes);
+
+            return augmentedSelf.withState(c(function() {
                 for (var field in subresourceCollections) {
                     if ( !self.attributes()[field]() ) 
                         continue;
 
-                    var val = withAttrs.attributes()[field]()
+                    var val = augmentedSelf.attributes()[field]();
 
                     if ( !val )
                         return "fetching";
@@ -307,14 +309,12 @@ define([
                 }
                 return "ready";
             }));
-
-            
-        }
+        };
 
         self.toString = function() { return 'Model()'; };
 
         return self;
-    }
+    };
 
     // Model constructor from just a dictionary of attributes that just stores them
     // for mocking/testing/etc, it will also accept `fetch`, `state`, and `save` callbacks,
@@ -335,7 +335,7 @@ define([
         self.attributes = Attributes({ attributes: args.attributes });
 
         return new Model(self);
-    }
+    };
 
     var BBWriteThroughObservable = function(args) {
         var underlyingObservable = o();
@@ -349,7 +349,7 @@ define([
         underlyingObservable(args.value);
 
         return underlyingObservable;
-    }
+    };
     
     // Model constructor from url, data, attributes
     //
@@ -391,7 +391,7 @@ define([
                 debug: self.debug,
                 relationships: self.relationships(justThisModelCollection, attr).relationships
             });
-        }
+        };
         
         //  Set up a private Backbone.Model to handle HTTP, etc.
         var bbModel = new (BB.Model.extend({ url: url }))();
@@ -406,7 +406,7 @@ define([
                     value: value
                 });
             }
-        })
+        });
         
         // This will be mutated to correspond to the latest response; any other response will be ignored.
         var nonce = null;
@@ -444,7 +444,7 @@ define([
                 success: function(model, response) { 
                     if (nonce === myNonce) {
                         var changedAttributes = model.changedAttributes();
-                        if (self.debug) console.log(self.name, '<--', url(), changedAttributes)
+                        if (self.debug) console.log(self.name, '<--', url(), changedAttributes);
                         self.attributes(changedAttributes);
                         self.state('ready');
                     }
@@ -456,7 +456,7 @@ define([
         self.toString = function() { return 'RemoteModel'; };
 
         return new Model(self);
-    }
+    };
 
     // A model that has not been saved yet. It need not be a REST backend, but anything where
     // save() must occur and then we'll get a real Model back.
@@ -474,36 +474,41 @@ define([
             name: args.name,
             debug: args.debug,
             attributes: args.attributes,
-        })
+        });
 
         var attributeErrors = o({});
 
         // This changes one before initializationState, so the internal bits that depend on it fire before the
         // external world gets a state change (depending on attributes() before checking state() means client is out of luck!)
-        var createdModel = o(null)
+        var createdModel = o(null);
         
-        self.state = c(function() { return initializationState() === 'ready' ? createdModel().state() : initializationState() });
+        self.state = c(function() { return initializationState() === 'ready' ? createdModel().state() : initializationState(); });
         
-        self.attributeErrors = c(function() { return createdModel() ? createdModel().attributeErrors() : attributeErrors() });
+        self.attributeErrors = c(function() { return createdModel() ? createdModel().attributeErrors() : attributeErrors(); });
        
         self.attributes = c({
-            read: function() { return createdModel() ? createdModel().attributes() : initialModel.attributes() },
-            write: function(attrs) { createdModel() ? createdModel().attributes(attrs) : initialModel.attributes(attrs) }
+            read: function() { return createdModel() ? createdModel().attributes() : initialModel.attributes(); },
+            write: function(attrs) { return createdModel() ? createdModel().attributes(attrs) : initialModel.attributes(attrs); }
         });
         
         self.relatedCollection = function(model, attr) {
             if (createdModel())
                 return createdModel().relatedCollection(model, attr);
-        }
+        };
 
         self.fetch = function() { 
             if (createdModel())
                 createdModel().fetch(); 
             return self;
-        }
+        };
 
         self.save = function() { 
-            if (initializationState() === 'initial') {
+            if (initializationState() === 'ready') {
+                createdModel().save();
+
+            } else if (initializationState() === 'initial') {
+
+                // Call the `create` function provided to the constructor
                 var createResult = create({
                     attributes: initialModel.attributes(),
                     debug: initialModel.debug,
@@ -511,22 +516,22 @@ define([
                 });
                 initializationState('saving');
 
-                // Note: this leaks - once it becomes ready or error the other can never happen, but
-                // I don't really want to expose subscriptions explicitly; thinking about the right move
-                when(createResult, 'ready', function() {
-                    createdModel(createResult.model());
-                    initializationState('ready');
-                });
-                when(createResult, 'error', function() {
-                    attributeErrors(createResult.attributeErrors());
-                    initializationState('error');
-                    initializationState('initial');
-                });
-            } else if (initializationState() === 'ready') {
-                createdModel().save()
-            }
+                // It can return a promise or something already a value.
+                // If it does not return a promise, it must raise an exception
+                // to indicate the failure, so `when` will simulate a promise
+                // rejection
+                when(createResult, 
+                     function(actuallyCreatedModel) {
+                         createdModel(actuallyCreatedModel);
+                         initializationState('ready');
+                     }, 
+                     function(creationErrors) {
+                         attributeErrors(creationErrors);
+                         initializationState('initial');
+                     });
+            } 
             return self;
-        }
+        };
 
         return new Model(self);
     };
@@ -539,7 +544,7 @@ define([
     //   fetch    :: () -> ()
     //   newModel :: {String:??} -> ()  // input is attributes for a new Model
     //
-    //   relationships      :: (Collection, String) -> Collection
+    //   relationships      :: String -> Relationship
     // }
 
     // Implementation wrapper with fluent interface
@@ -552,7 +557,7 @@ define([
     //   // only available if the underlying collection provides it
     //   withData                 :: ({String:??} | ko.observable {String:??}) -> Collection 
     //   withName                 :: String -> Collection
-    //   relatedCollection :: String -> Collection   // Passes in self to the above
+    //   relatedCollection        :: String -> Collection
     // }
     //
     // The state transitions thusly, with any network request
@@ -568,25 +573,20 @@ define([
     var Collection = function(implementation) {
         var self = _(this).extend(implementation);
         
-        self.relatedCollection = function(attr) { return self.relationships(self, attr); }
+        self.relatedCollection = function(attr) { return self.relationships[attr].link(self); };
 
-        self.fetch = function() { implementation.fetch(); return self };
-
-        self.when = function(goalState, callback) {
-            when(self, goalState, callback);
-            return self; // just to be fluent
-        }
+        self.fetch = function() { implementation.fetch(); return self; };
 
         //self.withData = function(data) { return new Collection(implementation.withData(data)); }
         //self.withName = function(name) { return new Collection(implementation.withName(name)); }
 
         self.withRelationships = function(additionalRelationships) {
             var impl = _({}).extend(self, {
-                relationships: function(coll, attr) { return additionalRelationships(coll, attr) || self.relationships(coll, attr); }
+                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); }
             });
             
             return new Collection(impl);
-        }
+        };
         
         self.withSubresourcesFrom = function(subresourceCollections) {
 
@@ -604,7 +604,7 @@ define([
                 state: c(function() {
                     var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
                     if ( m ) 
-                        return m.state()
+                        return m.state();
                     else
                         return self.state();
                 }),
@@ -617,7 +617,7 @@ define([
             });
 
             return new Collection(impl);
-        }
+        };
 
         self.withRelatedSubresources = function() {
             var attrs = arguments;
@@ -625,7 +625,25 @@ define([
             _(attrs).each(function(attr) { colls[attr] = self.relatedCollection(attr).fetch(); });
 
             return self.withSubresourcesFrom(colls);
-        }
+        };
+    };
+
+    // LocalCollection
+    //
+    // All in memory
+    var LocalCollection = function(args) {
+        var self = {};
+
+        args = args || {};
+
+        self.name = args.name || "(unknown)";
+        self.debug = args.debug || false;
+        self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
+
+        self.state = o('ready');
+        self.models = Models({ models: args.models });
+
+        return new Collection(self);
     };
     
     // Collection constructor for remote collections
@@ -643,18 +661,18 @@ define([
         self.data = w(args.data || {});
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
 
         self.state = ko.observable("initial");
-        self.models = ko.observable({});
+        self.models = Models(args.models || {});
         var BB = args.Backbone || Backbone; // For swapping out network library if desired, and for testing
         
         // A private `Backbone.Collection` for dealing with HTTP/jQuery
-        var bbCollectionClass = BB.Collection.extend({ 
+        var BBCollectionClass = BB.Collection.extend({ 
             url: self.url,
             parse: function(response) { return response.objects; }
         });
-        var bbCollection = new bbCollectionClass();
+        var bbCollection = new BBCollectionClass();
 
         // An ss.Model for an existing model fetching via the collection
         var modelInThisCollection = function(args) {
@@ -675,36 +693,47 @@ define([
         var updateModels = function(receivedModels, options) {
             if (self.debug) console.log(self.name, '<--', '(' + _(receivedModels).size() + ' results)');
 
-            var next_models = _(self.models.peek()).clone();
-            var models_changed = false;
-            
+            var modelsToUpdate = {};
+
             // Adjust any existing models, add new ones
             _(receivedModels).each(function(bbModel) {
                 var uri = bbModel.get('resource_uri'); // Without this, we don't actually have a "Model" per se
-                
-                if ( _(next_models).has(uri) ) {
-                    next_models[uri].attributes(bbModel.attributes);
-                } else {
-                    models_changed = true;
-                    next_models[uri] = modelInThisCollection({ 
-                        uri: uri, 
-                        attributes: bbModel.attributes,
+                modelsToUpdate[bbModel.get('resource_uri')] = modelInThisCollection({
+                    uri: uri,
+                    attributes: bbModel.attributes
+                })
+            });
+
+            self.models(receivedModels);
+        };
+
+        // :: model creation args -> promise fulfilled or rejected as appropriate
+        var create = function(args) { 
+            var createDeferred = when.defer();
+            
+            // Will trigger an "add" hence `updateModels` once the server responds happily
+            var payload = toJValue(LocalModel(args));
+            if (self.debug) console.log(self.name, '==>', payload);
+            
+            var bbModel = bbCollection.create(payload, {
+                wait: true,
+                success: function(newModel, response, options) { 
+                    // No nonce needed because the collection's state does not change
+                    var createdModel = modelInThisCollection({ 
+                        uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
+                        attributes: newModel.attributes 
                     });
+
+                    updateModels([newModel], { extend: true });
+                    createDeferred.resolve(createdModel);
+                },
+                error: function(model, xhr, options) {
+                    var err = JSON.parse(xhr.responseText);
+                    createDeferred.reject(adjustTastypieError(err));
                 }
             });
             
-            // Remove any non-present models
-            if ( !(options && options.extend) ) {
-                _.chain(next_models).keys().difference(bbCollection.pluck('resource_uri')).each(function(uri) {
-                    delete next_models[uri];
-                    models_changed = true;
-                });
-            }
-            
-            // Mutate the dict if it has changed
-            if (models_changed) {
-                self.models(next_models);
-            }
+            return createDeferred.promise;
         }
     
         // This will be mutated to correspond to the latest response; any other response will be ignored.
@@ -718,39 +747,7 @@ define([
             return NewModel({
                 debug: self.debug,
                 attributes: args.attributes,
-                create: function(args) { 
-                    var modelHoldingPen = {
-                        state: o('saving'),
-                        model: o(null),
-                        attributeErrors: o({})
-                    }
-
-                    // Will trigger an "add" hence `updateModels` once the server responds happily
-                    var payload = toJValue(LocalModel(args));
-                    if (self.debug) console.log(self.name, '==>', payload);
-
-                    var bbModel = bbCollection.create(payload, {
-                        wait: true,
-                        success: function(newModel, response, options) { 
-                            // No nonce needed because the collection's state does not change
-                            var createdModel = modelInThisCollection({ 
-                                uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
-                                attributes: newModel.attributes 
-                            });
-
-                            updateModels([newModel], { extend: true });
-                            modelHoldingPen.model(createdModel);
-                            modelHoldingPen.state('ready'); 
-                        },
-                        error: function(model, xhr, options) {
-                            var err = JSON.parse(xhr.responseText);
-                            modelHoldingPen.attributeErrors(adjustTastypieError(err));
-                            modelHoldingPen.state('error');
-                        }
-                    });
-                    
-                    return modelHoldingPen;
-                }
+                create: create
             });
         };
         
@@ -797,7 +794,7 @@ define([
         self.withParam = function(additionalParam) {
             var newUrl = c(function() {
                 var parsedUrl = URI(u(self.url));
-                var newParam = _({}).extend( parsedUrl.query(true), u(additionalParam))
+                var newParam = _({}).extend( parsedUrl.query(true), u(additionalParam));
 
                 return parsedUrl.query(newParam).toString();
             });
@@ -822,34 +819,53 @@ define([
         };
 
         return new Collection(self);
-    }
-
-    // The "bulk" version of a URI, which links one model to another.
-    // This is a construct at a lower level than a Join, that tells
-    // how exactly to efficiently fetch the other end of a relationship.
-    //
-    // interface CollectionLink {
-    //   link :: src:Collection -> target:Collection -> dst:Collection
-    // }
-    var CollectionLink = function(impl) {
-        var self = _(this).extend(impl);
     };
 
-    // FilterLink contructor, based on adding querystring to dest, with args :: {
-    //   withData :: {String: Model -> String|Number}  // A dictionary of how to build the filter
-    // } 
-    var FilterLink = function(args) {
-        var self = {};
+    // Link = Collection -> Collection
+    //
+    // The simplest sort of link is a URI, a pointer. However, even a
+    // URI may be relative, hence takes a "source" location as an
+    // implicit input. And much more complex links arise in
+    // efficiently moving from a _set_ of fetched models to another
+    // set of fetched models. Hence, a link is a function from a
+    // Collection to another Collection.
+    //
+    var Link = function(implementation) {
+        var self = _({}).extend(implementation);
 
-        var withData = args.withData || die('No withData provided to FilterLink');
+        self.filtered = function(filters) { return FilterLink(filters, self); };
 
-        self.link = function(source, target) {
-            // Build a compacted and uniq'd set of a data to minimize jitter
+        return self;
+    };
+
+    // LinkToCollection :: Collection -> Link
+    //
+    // A constant link that ignores its input and returns the provided destination collection
+    //
+    var LinkToCollection = function(destination) {
+        return new Link({
+            resolve: function(sourceCollection) {
+                return destination;
+            }
+        });
+    };
+
+    // FilterLink :: { String: Model -> String|Number } -> (Link -> Link)
+    //
+    // The same as the input link, but adds filters based on a dictionary
+    // of input functions. It combines the values from all the models
+    // into a single filter.
+    //
+    var FilterLink = function(filters, link) {
+        return new Link({ resolve: function(sourceCollection) {
+            var target = link.resolve(sourceCollection);
+            
             var targetData = c(function() {
                 var data = {};
-                _(withData).each(function(fn, key) {
-                    var vals = _.chain(source.models())
+                _(filters).each(function(fn, key) {
+                    var vals = _.chain(sourceCollection.models())
                         .values()
+                        .map(u)
                         .map(fn)
                         .filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
                         .uniq()
@@ -858,40 +874,44 @@ define([
 
                     if ( _(vals).isEmpty() ) vals = NOFETCH;
 
-                    data[key] = vals
+                    data[key] = vals;
                 });
 
                 // And... danger / hardcoding for tastypie for now (can actually be easily expressed in the client code, but verbose)
-                data['limit'] = 0;
+                data.limit = 0;
 
                 return data;
             }).extend({throttle: 1});
 
             return target.withData(targetData);
-        }
-
-        return new CollectionLink(self);
-    }
-
-    // Another very common case is building a filter on the other end from the source object
-    var FromOneFilterLink = function(args) {
+        } });
+    };
+    
+    // FromOneFilterLink :: {from:String, to: String, transform: * -> *} -> (Link -> Link)
+    //
+    // Creates a filter on the target's `to` attribute by transforming the source's `from` attribute.
+    //
+    var FromOneFilterLink = function(args, link) {
         var from      = args.from      || 'id',
             transform = args.transform || function(x) { return x; },
             to        = args.to;
 
-        var withData = {};
-        withData[to] = function(model) { return transform(u(model.attributes()[from])); };
+        var filters = {};
+        filters[to] = function(model) { return transform(u(model.attributes()[from])); };
         
-        return FilterLink({ withData: withData })
-    }
+        return FilterLink(filters, link);
+    };
     
-    // Of which the most most common case is a direct URL in the source object,
-    // but we must do a bulk operation and we don't yet support tastypie-esque multiget,
-    // so the assumption, to default to small(er) querystrings, is that the id
-    // can be parsed out of the Url as the last component, and filtered via id__in
-    var DirectUrlLink = function(args) {
+    // UrlLink :: {from:String} -> (Link -> Link)
+    //
+    // Uses the `from` attribute of each model in the source collection
+    // as the URL for a model in the destination collection. Currently
+    // hard-coded to Tastypie/Rails style URLs where the ID is the final
+    // non-empty segment of the path, so querystring do not get too large.
+    var UrlLink = function(args, link) {
         return FromOneFilterLink({
-            from:      args.from || dir('No attribute provided for a DirectUrlLink'),
+            from:      args.from || die('No attribute provided for UrlLink'),
+            to:        'id__in',
             transform: function(uri) { 
                 if (!uri) return uri; // Preserve null and undefined
 
@@ -900,169 +920,107 @@ define([
                     return URI(uri).segment(-2);
                 else
                     return URI(uri).segment(-1);
-            },
-            to:        'id__in'
-        });
-    }
-
-    // Sometimes there is an array of Urls... then actually FromOneFilterLink is not
-    // suitable and you need a ToManyFilterLink
-    var MultiUrlLink = function(args) {
-        // TODO (so far they are all better expressed as FromOne for smaller urls
-    }
-    
-    // The dual to a CollectionLink, which does the multiget, is the bit that
-    // extracts just the right value from the resulting collection.
-    // (These two are generally closely related, but it is helpful to separate
-    // the concepts and then generate them from the same spec)
-    // This part I don't have a good name for, so I call a Dereference
-    //
-    // interface Dereference = {
-    //   deref :: src:Model -> dst:Collection -> Model or [Model] // if it was "to many"
-    // }
-    var Dereference = function(implementation) {
-        var self = _(this).extend(implementation);
-
-        // ...
-    }
-
-    // A common case is that some attribute is exactly the Url to extract from the collection (or dictionary, special case)
-    var DirectDeref = function(args) {
-        var self = {},
-            from = args.from || die('Required argument `from` not provided to DirectUrlDeref');
-        
-        self.deref = function(source, destination) {
-            var to = u(source.attributes()[from]);
-
-            if ( destination instanceof Collection ) {
-                return destination.models()[to]
-            } else {
-                return destination[to];
             }
-        }
-
-        return new Dereference(self);
-    }
-
-    // Another common case is that there is no attribute in the source, but anything matching a certain filter should go in
-    // i.e. a join, and likely a filter related to that of the query for the multiget!
-    var FilterDeref = function(args) {
-        var self   = {},
-            filter = args.filter || die('Missing required arg `filter` for FilterDeref')
-
-        self.deref = function(source, destination) {
-            var dest = destination instanceof Collection ? u(destination.models) : u(destination);
-
-            return _.chain(dest)
-                .filter(function(m) { return filter(source, m); })
-                .value();
-        }
-
-        return new Dereference(self);
+        }, link);
     };
 
-    // Special case is easy
-    var JoinToManyDeref = function(args) {
-        var from = args.from || die('Missing required argument `from` in solidstate.JoinToManyDeref'),
-            to   = args.to   || die('Missing required argument `to` in solidstate.JoinToManyDeref');
-
-        return FilterDeref({
-            filter: function(source, destination) { return u(source.attributes()[from]) === u(destination.attributes()[to]); }
-        })
-    };
-
-    // Put them together, and you've got a relationship (but you can customize a relationship that is not built from them)
+    // Reference = Model -> Collection -> ko.observable
     //
-    // interface Relationship = {
-    //   link  :: src:Collection -> dst:Collection -> Collection
-    //   deref :: src:Model      -> dst:Collection -> Model or [Model] as appropriate
-    // }
-    var Relationship = function(impl) {
-        var self = _(this).extend(impl);
+    // A reference complements a Link. Since the link is from collection to
+    // collection, the Reference knows how get the proper value out of the 
+    // destination collection and how to put it back. It may refer
+    // to any piece of the model.
+    //
+    // A `Reference` is essentially the read/write _dereference_ spec. It may eventually
+    // have more useful methods.
+    //
+    var Reference = function(impl) {
+        return impl;
     };
     
-    // So common!
-    var Rel = function(args) {
-        var self = {
-            link: args.link.link,  // args.link is a constructed CollectionLink object
-            deref: args.deref.deref // args.deref is a constructed Dereference object
-        };
-
-        return new Relationship(self);
-    }
-    
-    
-    // JoinRelationship constructor with args ::
-    // {
-    //   type     :: ("toOne" | "toMany" | "fromOne" | "fromMany")  // how the two collections get linked up
+    // ToOne / ToMany attributes are low-level building blocks for most common-cases
     //
-    //   key           :: String                     // What field from the src to gather up
-    //   keyType      :: ("id" | "uri" | function)  // Modification to the extracted keys to get
-    //   reverseField :: String                     // Querystring field on a derived collection that will receive the keys
-    // }
-    var JoinRelationship = function(args) {
-        var self = {};
+    // These are observables from which one reads/writes objects, but the underlying observable
+    // experiences this as reads/writes or URIs.
+    //
+    var ToOne = function(underlyingObservable) {
+       return function(collection) {
+           _(collection).has('models') || die('Collection passed to `ToOne` missing required `models` attribute:' + collection);
 
-        self.type = args.type || "toOne"; 
-        self.reverseField = args.reverseField || 'id__in';
-        self.data = w(args.data || {});
-        
-        // To minimize specification for the most efficient and common case, the default depends on self.type
-        self.keyType = args.keyType || ( ((self.type === "toOne")||(self.type === "toMany")) ? "uri" : "id" );
-        self.key = args.key || ( ((self.type === "toOne")||(self.type === "toMany")) ? "resource_uri" : "id" ); // The attribute on the source collection
+           return transformed(underlyingObservable, {
+               read: function(v) { return v ? u(collection.models()[v]) : v; },
+               write: function(v) { return v ? v.attributes().resource_uri() : v; }
+           });
+       };
+    };
 
-        self.link = function(sourceCollection, destCollection) {
-            // This should cut off computation if the actual related items has not changed
-            var relatedKeys = c(function() { 
-                var attrs = _.chain(sourceCollection.models()).values().map(function(m) { return u(m.attributes()[self.key]); });
-
-                if ( self.type === "toMany" ) {
-                    attrs = attrs.flatten();
-                } else if ( (self.type === "toOne") || (self.type === "fromMany") ) {
-                    // Nothing
-                } else {
-                    throw ("Invalid relationship type: " + self.type)
-                }
-
-                // Hard-codey way of avoiding null and other problems
-                attrs = attrs.filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
-
-                if ( self.keyType === 'id' ) {
-                    // Nothing
-                } else if ( self.keyType === 'uri' ) {
-                    attrs = _(attrs).map(function(v) { 
-
-                        // URIjs does not strip the last slash, though we want the last nonempty segment. Hack it.
-                        if ( v[v.length-1] == '/' )
-                            return URI(v).segment(-2);
-                        else
-                            return URI(v).segment(-1); 
-                    });
-                } else if ( _(self.keyType).isFunction() ) {
-                    attrs = _(attrs).map(self.keyType);
-                } else {
-                    throw ("Invalid key type " + self.keyType);
-                }
-
-                return attrs.uniq().value().sort();
-            }).extend({throttle: 1});
-
-            // This should only fire if the sorted set of attributes has actually changed
-            var data = c(function() {
-                var keys = relatedKeys();
-                if ( _(keys).isEmpty() ) { keys = NOFETCH; }
-                
-                var _data = _(self.data()).clone();
-                _data.limit = 0; // Enough rope to hang yourself with, but partial join only break things
-                _data[self.reverseField] = keys;
-                return _data;
+    var ToMany = function(underlyingObservable) {
+        return function(collection) {
+            return transformed(underlyingObservable, {
+                read: function(vs) { return vs ? _(vs).map(function(v) { return collection.models()[v]; }) : vs; },
+                write: function(vs) { return vs ? _(vs).map(function(v) { v.attributes().resource_uri(); }) : vs; }
             });
-               
-            return destCollection.withData(data); // Paging, as always, sucks.
-        }
+        };
+    };
 
-        return new Relationship(self);
-    }
+    // ToOneReference
+    //
+    // The `field` in the model directly references the Url of the
+    // destination.
+    //
+    var ToOneReference = function(args) {
+        var field = args.from || die('Missing required args `from` for `ToOneReference`');
+
+        return function(model, destCollection) {
+            return ToOne(model.attr(field))(destCollection);
+        };
+    };
+    
+    // ToManyReference
+    //
+    // The `field` in the model is an array of Urls in the destination collection
+    //
+    var ToManyReference = function(field) {
+        return function(model, destCollection) {
+            return ToMany(model.attr(field))(destCollection);
+        };
+    };
+
+    // FilterReference
+    //
+    // A filter reference is a "virtual" reference, not actually present on the model, but implicit
+    // by filtering the target collection according to some predicate of the model.
+    //
+    var FilterReference = function(filter) {
+        return function(sourceModel, destCollection) {
+            return c(function() {
+                return _.chain(destCollection.models())
+                    .values()
+                    .filter(function(m) { return filter(sourceModel, m); })
+                    .value();
+            });
+        };
+    };
+
+    // JoinReference
+    //
+    // A FilterReference where the `from` attribute and `to` attribute must match exactly.
+    //
+    var JoinReference = function(args) {
+        var from = args.from || die('Missing required argument `from` in solidstate.JoinReference'),
+            to   = args.to   || die('Missing required argument `to` in solidstate.JoinReference');
+
+        return FilterReference(function(source, destination) { return u(source.attributes()[from]) === u(destination.attributes()[to]); });
+    };
+
+    // Relationship
+    //
+    // A `Link` for getting from one collection to another, and a `Reference` for pulling out individual models... is a complete Relationship
+    //
+    // Relationship = {
+    //   link  :: Link
+    //   deref :: Reference
+    // }
     
     // Interface Api =
     // {
@@ -1082,10 +1040,25 @@ define([
     var Api = function(impl) {
         var self = _(this).extend(impl);
 
-        self.fetch = function() { impl.fetch(); return self };
-        self.when = function(goalState, callback) { when(self, goalState, callback); return self; };
-    }
-    
+        self.fetch = function() { impl.fetch(); return self; };
+        
+        var stateDeferreds = {};
+        self.entersState = function(goalState) {
+            if ( !_(stateDeferreds).has(goalState) ) {
+                stateDeferreds[goalState] = when.defer();
+            }
+            return stateDeferreds[goalState].promise;
+        };
+        self.state.subscribe(function(newState) {
+            _(stateDeferreds).each(function (deferred, goalState) {
+                if ( goalState === newState )
+                    deferred.resolve();
+                else
+                    deferred.reject(newState);
+            });
+        });
+    };
+        
     // Api constructor from url
     //
     // args ::
@@ -1114,21 +1087,12 @@ define([
             _(relationshipsByDest).each(function(relationshipParams, attr) {
                 relationships[sourceName] = relationships[sourceName] || {};
 
-                var rel = _(relationshipParams).has('rel') ? relationshipParams.rel
-                    : JoinRelationship({
-                        debug: self.debug,
-                        key: relationshipParams.key || attr,
-                        keyType: relationshipParams.keyType,
-                        type: relationshipParams.type,
-                        reverseField: relationshipParams.reverseField
-                    });
-
                 relationships[sourceName][attr] = {
                     collection: relationshipParams.collection,
-                    rel: rel
+                    rel: relationshipParams.rel
                 };
             });
-        })
+        });
 
         // The actual API metadata endpoint (a la Tastypie) is implemented as a Backbone model
         // where each attribute is a resource endpoint
@@ -1152,7 +1116,7 @@ define([
                     nextCollections[name] = RemoteCollection({ 
                         name: name,
                         debug: self.debug,
-                        url: metadata.list_endpoint,
+                        url: uri,
                         schema_url: metadata.schema,
                         relationships: function(coll, attr) { return self.relatedCollection(name, attr, coll); }
                     });
@@ -1167,16 +1131,16 @@ define([
         };
 
         var nonce = null;
-        var newNonce = function() { nonce = Math.random(); return nonce; }
+        var newNonce = function() { nonce = Math.random(); return nonce; };
 
         self.fetch = function() {
             self.state("fetching");
-            if (self.debug) console.log(self.name, '-->', u(self.url))
+            if (self.debug) console.log(self.name, '-->', u(self.url));
             var myNonce = newNonce();
             bbModel.fetch({
                 success: function(model, response) { 
                     if (nonce === myNonce) {
-                        if (self.debug) console.log(self.name, '<--', u(self.url))
+                        if (self.debug) console.log(self.name, '<--', u(self.url));
                         updateCollections(model.changedAttributes());
                         self.state('ready'); 
                     } 
@@ -1190,7 +1154,7 @@ define([
             var relationship = relationships[sourceName][attr]; 
 
             if (!relationship) 
-                throw ("No known relationship for " + sourceName + "." + attr)
+                throw ("No known relationship for " + sourceName + "." + attr);
 
             var destCollection = self.collections()[relationship.collection];
 
@@ -1207,7 +1171,7 @@ define([
 
         var api = new Api(self);
         return api;
-    }
+    };
 
     //
     // AMD Module
@@ -1216,23 +1180,31 @@ define([
         // Interfaces
         Model: Model,
         Collection: Collection,
-        CollectionLink: CollectionLink,
-        Dereference: Dereference,
-        Relationship: Relationship,
+        Link: Link,
+        Reference: Reference,
         Api: Api,
 
-        // Implementations
+        // Models
         LocalModel: LocalModel,
         NewModel: NewModel,
         RemoteModel: RemoteModel,
+
+        // Collections
+        LocalCollection: LocalCollection,
         RemoteCollection: RemoteCollection,
+
+        // Links
+        LinkToCollection: LinkToCollection,
         FilterLink: FilterLink,
         FromOneFilterLink: FromOneFilterLink,
-        DirectUrlLink: DirectUrlLink,
-        DirectDeref: DirectDeref,
-        FilterDeref: FilterDeref,
-        JoinToManyDeref: JoinToManyDeref,
-        Rel: Rel,
+        UrlLink: UrlLink,
+
+        // References
+        ToOneReference: ToOneReference,
+        ToManyReference: ToManyReference,
+        JoinReference: JoinReference,
+
+        // Apis
         RemoteApi: RemoteApi,
 
         // Helpers, exposed for testing and whatever
@@ -1240,7 +1212,6 @@ define([
         BBWriteThroughObservable: BBWriteThroughObservable,
 
         // Misc 
-        NOFETCH: NOFETCH,
-        when: when
-    }
+        NOFETCH: NOFETCH
+    };
 });
