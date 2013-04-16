@@ -721,7 +721,7 @@ define([
                 })
             });
 
-            self.models(receivedModels);
+            self.models(modelsToUpdate);
         };
 
         // :: model creation args -> promise fulfilled or rejected as appropriate
