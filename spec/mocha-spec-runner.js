@@ -1,9 +1,12 @@
 var requirejs = require('requirejs');
+
+var solidstatePath = process.env['SOLIDSTATE_PATH'] || 'src/solidstate'
+
 requirejs.config({
     baseUrl: '.',
     nodeRequire: require,
     paths: {
-        'solidstate': 'lib-cov/solidstate'
+        'solidstate': solidstatePath
     }
 });
 

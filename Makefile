@@ -17,18 +17,18 @@ jshint:
 	$(JSHINT) --verbose
 
 .PHONY: test
-test: jshint lib-cov 
+test: jshint
 	$(MOCHA) --reporter dot ./spec/mocha-spec-runner.js
 
 .PHONY: coverage
-coverage: jshint lib-cov/solidstate.js
-	$(MOCHA) --reporter mocha-istanbul ./spec/mocha-spec-runner.js
+coverage: jshint lib-cov
+	SOLIDSTATE_PATH=lib-cov/solidstate $(MOCHA) --reporter mocha-istanbul ./spec/mocha-spec-runner.js
 
 #
 # Actual file targets
 #
 
-lib-cov/solidstate.js: src/solidstate.js 
+lib-cov: src/solidstate.js 
 	rm -rf lib-cov
 	mkdir -p lib-cov
 	$(ISTANBUL) instrument --output lib-cov --no-compact --variable global.__coverage__ src
