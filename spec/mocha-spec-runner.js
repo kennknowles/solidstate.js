@@ -1,7 +1,10 @@
 var requirejs = require('requirejs');
 requirejs.config({
     baseUrl: '.',
-    nodeRequire: require
+    nodeRequire: require,
+    paths: {
+        'solidstate': 'lib-cov/solidstate'
+    }
 });
 
 /* 

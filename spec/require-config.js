@@ -2,7 +2,7 @@ requirejs.config({
     // The RequireJS docs advise against configuring paths to node_modules for use *in node*
     // but I do it for use *in the browser*, because it is just the test suite
     paths: {
-        "solidstate"          : "../solidstate"
+        "solidstate"          : "../lib-cov/solidstate"
     },
     packages: [
         { "name": "backbone",    "main": "backbone.js",              "location": "../node_modules/backbone"                  },
