@@ -18,7 +18,7 @@ define([
     expect = chai.expect,
     assert = chai.assert;
 
-    describe("FilterLink :: ({attr: filter, ...}, Link) -> Link", function() {
+    describe("FilterLink :: {attr: filter, ...} -> (Link -> Link)", function() {
         it("adds querystring filters to the target of a link", function() {
             var src = ss.LocalCollection({
                 models: {
@@ -34,7 +34,7 @@ define([
             var dst = new ss.Collection({ withData: withDataSpy });
             var link = ss.LinkToCollection(dst);
 
-            var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.x; } }, link);
+            var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.x; } })(link);
 
             var filteredDst = filteredLink.resolve(src);
             var dataObservable = withDataSpy.args[0][0];

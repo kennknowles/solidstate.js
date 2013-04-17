@@ -873,42 +873,50 @@ define([
     // of input functions. It combines the values from all the models
     // into a single filter.
     //
-    var FilterLink = function(filters, link) {
-        return new Link({ resolve: function(sourceCollection) {
-            var target = link.resolve(sourceCollection);
-            
-            var targetData = c(function() {
-                var data = {};
-                _(filters).each(function(fn, key) {
-                    var vals = _.chain(sourceCollection.models())
-                        .values()
-                        .map(u)
-                        .map(fn)
-                        .filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
-                        .uniq()
-                        .value()
-                        .sort();
+    var FilterLink = function(filters) {
+        filters || die('Missing required arg `filters` for FilterLink');
 
-                    if ( _(vals).isEmpty() ) vals = NOFETCH;
+        return function(link) {
+            link    || die('Missing required arg `link` for FilterLink');
 
-                    data[key] = vals;
-                });
-
-                // And... danger / hardcoding for tastypie for now (can actually be easily expressed in the client code, but verbose)
-                data.limit = 0;
-
-                return data;
-            }).extend({throttle: 1});
-
-            return target.withData(targetData);
-        } });
+            return new Link({ 
+                resolve: function(sourceCollection) {
+                    var target = link.resolve(sourceCollection);
+                    
+                    var targetData = c(function() {
+                        var data = {};
+                        _(filters).each(function(fn, key) {
+                            var vals = _.chain(sourceCollection.models())
+                                .values()
+                                .map(u)
+                                .map(fn)
+                                .filter(function(v) { return _(v).isString() || _(v).isNumber(); }) 
+                                .uniq()
+                                .value()
+                                .sort();
+                            
+                            if ( _(vals).isEmpty() ) vals = NOFETCH;
+                            
+                            data[key] = vals;
+                        });
+                        
+                        // And... danger / hardcoding for tastypie for now (can actually be easily expressed in the client code, but verbose)
+                        data.limit = 0;
+                        
+                        return data;
+                    }).extend({throttle: 1});
+                    
+                    return target.withData(targetData);
+                }
+            });
+        };
     };
-    
-    // FromOneFilterLink :: {from:String, to: String, transform: * -> *} -> (Link -> Link)
-    //
+        
+        // FromOneFilterLink :: {from:String, to: String, transform: * -> *} -> (Link -> Link)
+        //
     // Creates a filter on the target's `to` attribute by transforming the source's `from` attribute.
     //
-    var FromOneFilterLink = function(args, link) {
+    var FromOneFilterLink = function(args) {
         var from      = args.from      || 'id',
             transform = args.transform || function(x) { return x; },
             to        = args.to;
@@ -916,7 +924,7 @@ define([
         var filters = {};
         filters[to] = function(model) { return transform(u(model.attributes()[from])); };
         
-        return FilterLink(filters, link);
+        return FilterLink(filters);
     };
     
     // UrlLink :: {from:String} -> (Link -> Link)
@@ -925,20 +933,22 @@ define([
     // as the URL for a model in the destination collection. Currently
     // hard-coded to Tastypie/Rails style URLs where the ID is the final
     // non-empty segment of the path, so querystring do not get too large.
-    var UrlLink = function(args, link) {
+    var UrlLink = function(args) {
         return FromOneFilterLink({
             from:      args.from || die('No attribute provided for UrlLink'),
             to:        'id__in',
             transform: function(uri) { 
                 if (!uri) return uri; // Preserve null and undefined
-
+                
+                if (!_(uri).isString()) throw new Error('UrlLink given a property `' + args.from + '` that is not a string!');
+                
                 // If it ends in a slash, grab the second-to-last segment for now...
                 if ( uri[uri.length - 1] === '/' )
                     return URI(uri).segment(-2);
                 else
                     return URI(uri).segment(-1);
             }
-        }, link);
+        });
     };
 
     // Reference = Model -> Collection -> ko.observable
@@ -1085,10 +1095,10 @@ define([
         self.name = args.name || 'solidstate.RemoteApi';
         self.relationships = {};
 
-        var linkToNamedCollection = function(name) {
+        var linkToNamedCollection = function(attr, name) {
             return new Link({
                 resolve: function(src) {
-                    return LinkToCollection(self.collections()[name]).resolve(src);
+                    return LinkToCollection(self.collections()[name]).resolve(src).withName(src.name + '.' + attr);
                 }
             });
         };
@@ -1100,9 +1110,11 @@ define([
             _(relationshipsByDest).each(function(relationshipParams, attr) {
                 self.relationships[sourceName] = self.relationships[sourceName] || {};
 
+                var linkTransform = relationshipParams.link || function(link) { return UrlLink({from: attr}, link) };
+
                 self.relationships[sourceName][attr] = {
                     collection: relationshipParams.collection,
-                    link: relationshipParams.link || UrlLink({from: attr}, linkToNamedCollection(relationshipParams.collection) ),
+                    link: linkTransform(linkToNamedCollection(attr, relationshipParams.collection)),
                     deref: relationshipParams.deref || ToOneReference({from: attr})
                 }
             });

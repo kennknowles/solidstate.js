@@ -18,7 +18,7 @@ define([
     expect = chai.expect,
     assert = chai.assert;
 
-    describe("UrlLink :: {from: String} -> Link", function() {
+    describe("UrlLink :: {from: String} -> (Link -> Link)", function() {
         it("Is a link from an attribute containing a Url to all related items in the other collection", function() {
             var src = ss.LocalCollection({
                 models: {
@@ -36,7 +36,7 @@ define([
             });
             
             var link = ss.LinkToCollection(dst);
-            var urlLink = ss.UrlLink({ from: 'x', }, link);
+            var urlLink = ss.UrlLink({ from: 'x', })(link);
 
             var filteredDst = urlLink.resolve(src);
             var dataObservable = withDataSpy.args[0][0];
