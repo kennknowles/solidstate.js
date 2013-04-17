@@ -244,7 +244,7 @@ define([
                 models: c(function() { return [self]; })
             });
 
-            return self.relationships(attr).link(justThisModelCollection);
+            return self.relationships(attr).link.resolve(justThisModelCollection);
         };
 
         self.toJSON = function() {
