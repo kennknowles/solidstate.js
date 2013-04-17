@@ -14,6 +14,7 @@ define([
     './NewModel.spec',
     './RemoteModel.spec',
     './RemoteCollection.spec',
+    './ToManyReference.spec',
     './ToOneReference.spec',
     './UrlLink.spec',
 ], function() {

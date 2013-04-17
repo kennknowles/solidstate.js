@@ -304,7 +304,7 @@ define([
 
             return augmentedSelf.withState(c(function() {
                 for (var field in subresourceCollections) {
-                    if ( !self.attributes()[field]() ) 
+                    if ( !u(self.attributes()[field]) ) 
                         continue;
 
                     var val = augmentedSelf.attributes()[field]();
@@ -984,7 +984,16 @@ define([
     var ToMany = function(underlyingObservable) {
         return function(collection) {
             return transformed(underlyingObservable, {
-                read: function(vs) { return vs ? _(vs).map(function(v) { return collection.models()[v]; }) : vs; },
+                read: function(vs) { 
+                    if (!vs) return vs;
+                    
+                    var results = _(vs).map(function(v) { return u(collection.models()[v]); });
+                    
+                    if ( _(results).any(function(r) { return _(r).isUndefined(); }) )
+                        return undefined;
+
+                    return results;
+                },
                 write: function(vs) { return vs ? _(vs).map(function(v) { v.attributes().resource_uri(); }) : vs; }
             });
         };
@@ -1007,7 +1016,9 @@ define([
     //
     // The `field` in the model is an array of Urls in the destination collection
     //
-    var ToManyReference = function(field) {
+    var ToManyReference = function(args) {
+        var field = args.from || die('Missing required arg `from` for ToManyReference`');
+
         return function(model, destCollection) {
             return ToMany(model.attr(field))(destCollection);
         };
@@ -1110,11 +1121,15 @@ define([
             _(relationshipsByDest).each(function(relationshipParams, attr) {
                 self.relationships[sourceName] = self.relationships[sourceName] || {};
 
-                var linkTransform = relationshipParams.link || function(link) { return UrlLink({from: attr}, link) };
+                var linkTransform = relationshipParams.link || UrlLink({from: attr});
+
+                var link = linkTransform(linkToNamedCollection(attr, relationshipParams.collection));
+                _(link).has('resolve') || die('Missing required method `resolve` for Link from `' + sourceName + '.' + attr + 
+                                              '` to `' + relationshipParams.collection + '`:\n' + link);
 
                 self.relationships[sourceName][attr] = {
                     collection: relationshipParams.collection,
-                    link: linkTransform(linkToNamedCollection(attr, relationshipParams.collection)),
+                    link: link,
                     deref: relationshipParams.deref || ToOneReference({from: attr})
                 }
             });
@@ -1176,25 +1191,6 @@ define([
             return self; // Just to be "fluent"
         };
 
-        self.relatedCollection = function(sourceName, attr, sourceCollection) {
-            var relationship = relationships[sourceName][attr]; 
-
-            if (!relationship) 
-                throw ("No known relationship for " + sourceName + "." + attr);
-
-            var destCollection = self.collections()[relationship.collection];
-
-            if ( !destCollection ) 
-                throw ("No collection named " + relationship.collection);
-
-            destCollection = destCollection.withName(sourceName + '.' + attr);
-
-            // Get the related collection and rewrite its relationships to be keyed off the proper src name
-            return relationship.link(sourceCollection, destCollection).withRelationships(function(attr) {
-                return self.relationships[relationship.collection][attr];
-            });
-        };
-
         var api = new Api(self);
         return api;
     };
@@ -1234,11 +1230,13 @@ define([
         // Apis
         RemoteApi: RemoteApi,
 
-        // Helpers, exposed for testing and whatever
+        // Helpers
         Attributes: Attributes,
-        BBWriteThroughObservable: BBWriteThroughObservable,
+        Models: Models,
+        State: State,
 
-        // Misc 
-        NOFETCH: NOFETCH
+        // Misc, probably "private"
+        NOFETCH: NOFETCH,
+        BBWriteThroughObservable: BBWriteThroughObservable
     };
 });
