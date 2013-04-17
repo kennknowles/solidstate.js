@@ -5,12 +5,12 @@
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
     'backbone', 
-    //'contracts.js',
+    //'contracts-js',
     'knockout',
     'underscore',
     'URIjs',
     'when',
-], function(Backbone, /* contracts, */ ko, _, URI, when) {
+], function(Backbone, /*contracts,*/ ko, _, URI, when) {
     'use strict';
     
     //contracts.enabled(false);

@@ -4,7 +4,7 @@
 # 2. Everything is written in AMD style, hence uses amdefine for the Node bits, hence gives useless errors if it doesn't parse, hence jshint is crucial.
 
 BIN=node_modules/.bin
-MOCHA=$(BIN)/mocha
+MOCHA=$(BIN)/mocha # --harmony-proxies --harmony-collections
 ISTANBUL=$(BIN)/istanbul
 JSHINT=$(BIN)/jshint
 
