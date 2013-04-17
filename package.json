@@ -16,7 +16,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/kennknowles/solidstate.js"
+        "url": "https://github.com/kennknowles/solidstate.js.git"
     },
     "dependencies": {
         "amdefine": ">=0.0.4",
@@ -37,7 +37,7 @@
         "mocha-istanbul": ">=0.2.0",
         "sinon": ">=1.6.0"
     },
-    "files": ["solidstate.js"],
+    "files": ["src/solidstate.js"],
     "main": "src/solidstate",
     "scripts": {
         "test": "make test"
