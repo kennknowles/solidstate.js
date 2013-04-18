@@ -1018,7 +1018,7 @@ define([
     //
     var ToManyReference = function(args) {
         var field = args.from || die('Missing required arg `from` for ToManyReference`');
-
+        
         return function(model, destCollection) {
             return ToMany(model.attr(field))(destCollection);
         };
@@ -1031,6 +1031,8 @@ define([
     //
     var FilterReference = function(filter) {
         return function(sourceModel, destCollection) {
+            _(destCollection).has('models') || die('Collection passed to FilterReference missing `models`:' + destCollection);
+
             return c(function() {
                 return _.chain(destCollection.models())
                     .values()
@@ -1048,7 +1050,12 @@ define([
         var from = args.from || die('Missing required argument `from` in solidstate.JoinReference'),
             to   = args.to   || die('Missing required argument `to` in solidstate.JoinReference');
 
-        return FilterReference(function(source, destination) { return u(source.attributes()[from]) === u(destination.attributes()[to]); });
+        return FilterReference(function(source, destination) { 
+            _(source).has('attributes') || die('Model `source` passed to JoinReference missing attributes:' + source + '('+ui(source)+')');
+            _(destination).has('attributes') || die('Model `destination` passed to JoinReference missing attributes:' + destination +'('+u(destination)+')');
+
+            return u(source.attributes()[from]) === u(destination.attributes()[to]); 
+        });
     };
 
     // Relationship
