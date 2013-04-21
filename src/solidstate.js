@@ -660,6 +660,27 @@ define([
         self.state = o('ready');
         self.models = Models({ models: args.models });
 
+        var create = args.create ? args.create : LocalModel;
+
+        self.create = function(args) {
+            var deferred = when.defer();
+            var createdModel = create(args);
+            createdModel.state('ready');
+            deferred.resolve(createdModel);
+            return deferred.promise;
+        }
+        
+        self.newModel = function(args) { 
+            args = args || {};
+            args.attributes = args.attributes || o({});
+
+            return NewModel({
+                debug: self.debug,
+                attributes: args.attributes,
+                create: self.create
+            });
+        };
+
         return new Collection(self);
     };
     

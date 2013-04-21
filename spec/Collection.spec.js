@@ -57,5 +57,27 @@ define([
             expect(c3.models().two.state()).to.equal("ready");
             expect(c3.models().two.attributes().foo()).to.equal(101);
         });
+        
+        it("Creates new models with .newModel that appropriately proxy subresources", function() {
+            var f = function(args) { return ss.LocalModel(args); };
+            var createSpy = sinon.spy(f);
+            var c = ss.LocalCollection({
+                state: o("ready"),
+                models: o({}),
+                create: createSpy
+            });
+
+            var referenced = ss.LocalModel({ attributes: { resource_uri: 'zizzle' } });
+
+            var extendedC = c.withSubresourcesFrom({ foo: ss.LocalCollection({ models: { 'zizzle': referenced } }) });
+            var m = extendedC.newModel({ attributes: { foo: null } });
+            
+            m.attributes().foo( referenced );
+            
+            m.save();
+
+            assert(createSpy.called);
+            expect(u(createSpy.getCall(0).args[0].attributes.foo)).to.equal('zizzle');
+        });
     });
 });

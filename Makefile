@@ -14,7 +14,7 @@ JSHINT=$(BIN)/jshint
 
 .PHONY: jshint
 jshint:
-	$(JSHINT) --verbose
+	$(JSHINT) --verbose src spec
 
 .PHONY: test
 test: jshint

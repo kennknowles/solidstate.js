@@ -1,7 +1,7 @@
 require([ 
     "require",
     "mocha",
-    "chai",
+    "chai"
 ],
 function(requirejs, mocha, chai) {
     "use strict";
