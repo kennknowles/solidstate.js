@@ -34,6 +34,15 @@ define([
                                 ss.LocalCollection({ models: { bizzle: 'bazzle' } })) ))
                     .to.equal(undefined);
             });
+
+            it("When set to a model not in the referenced collection, adds it", function() {
+                var collection = ss.LocalCollection({ models: {} });
+                var model = ss.LocalModel({ attributes: { sizzle: null } }).withSubresourcesFrom({ sizzle: collection });
+
+                model.attributes().sizzle(ss.LocalModel({ attributes: { resource_uri: 'bizzle' } }));
+                
+                assert(_(collection.models()).has('bizzle'));
+            });
         });
     });
 });

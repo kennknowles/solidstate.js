@@ -999,7 +999,19 @@ define([
 
            return transformed(underlyingObservable, {
                read: function(v) { return v ? u(collection.models()[v]) : v; },
-               write: function(v) { return v ? v.attributes().resource_uri() : v; }
+               write: function(v) { 
+                   if (!v) return v;
+
+                   var resource_uri = v.attributes().resource_uri();
+
+                   if ( ! _( u(collection.models()) ).has(resource_uri) ) {
+                       var update = {};
+                       update[resource_uri] = v;
+                       collection.models(update);
+                   }
+
+                   return resource_uri;
+               }
            });
        };
     };
