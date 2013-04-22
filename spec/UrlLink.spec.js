@@ -32,6 +32,7 @@ define([
 
             var withDataSpy = sinon.spy();
             var dst = new ss.Collection({
+                models: o({}),
                 withData: withDataSpy
             });
             

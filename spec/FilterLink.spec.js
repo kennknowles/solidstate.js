@@ -31,7 +31,7 @@ define([
             });
             
             var withDataSpy = sinon.spy();
-            var dst = new ss.Collection({ withData: withDataSpy });
+            var dst = new ss.Collection({ models: o({}), withData: withDataSpy });
             var link = ss.LinkToCollection(dst);
 
             var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.x; } })(link);
