@@ -216,6 +216,8 @@ define([
 
         if ( typeof self.relationships === 'undefined' ) self.relationships = function(field) { return undefined; };
 
+        if ( typeof self.withoutSubresources === 'undefined' ) self.withoutSubresources = function() { return self; };
+
         self.fetch = function() { implementation.fetch(); return self; };
 
         self.save = function() { implementation.save(); return self; };
@@ -274,14 +276,16 @@ define([
                     write: function(updatedAttributes) { 
                         var underlyingAttributesNow = self.attributes();
                         var overlayedAttributesNow = overlayedAttributes();
+                        var updatedAttributesNow = u(updatedAttributes); // Attributes handles this for us, but due to the pick/omit we have to do it here too
+
                         var overlayedKeys = _(overlayedAttributesNow).keys();
                         
-                        overlayedAttributes( _(updatedAttributes).pick(overlayedKeys) );
+                        overlayedAttributes( _(updatedAttributesNow).pick(overlayedKeys) );
 
                         // We should never again touch attributes hidden by the overlay; in order for them
                         // not to be erased they must be set here as well.
                         self.attributes( _({}).extend(_(underlyingAttributesNow).pick(overlayedKeys),
-                                                      _(updatedAttributes).omit(overlayedKeys)) );
+                                                      _(updatedAttributesNow).omit(overlayedKeys)) );
                     }
                 })
             });
@@ -315,6 +319,10 @@ define([
             });
 
             var augmentedSelf = self.withAttributes(overlayedAttributes);
+
+            augmentedSelf.withoutSubresources = function() {
+                return self.withoutSubresources();
+            };
 
             return augmentedSelf.withState(c(function() {
                 for (var field in subresourceCollections) {
@@ -623,7 +631,7 @@ define([
 
             var augmentedModels = c(function() {
                 var _models = {};
-                
+             
                 _(self.models()).each(function(model, uri) {
                     _models[uri] = model.withSubresourcesFrom(subresourceCollections);
                 });
@@ -650,7 +658,7 @@ define([
                 models: augmentedModels
             });
 
-            return new Collection(impl);
+            return new Collection(impl); //.withName(self.name + '{'+ _(subresourceCollections).keys().join(',') +'}');
         };
 
         self.withRelatedSubresources = function() {
@@ -774,6 +782,7 @@ define([
                 wait: true,
                 success: function(newModel, response, options) { 
                     // No nonce needed because the collection's state does not change
+
                     var createdModel = modelInThisCollection({ 
                         uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
                         attributes: newModel.attributes 
@@ -1010,6 +1019,13 @@ define([
     // These are observables from which one reads/writes objects, but the underlying observable
     // experiences this as reads/writes or URIs.
     //
+    // While it is simplest to have these always transform their values, there are wacky cases:
+    // 1. When a Model is written that is not in the collection. In this case, it is added.
+    // 2. When a URI is written instead of a Model. This may be an accident, or may be because
+    //    we were just "lucky" to already have a Model in place. To try to catch the accidental
+    //    cases, the writing of a URI will fail if the URI is not found in the destination
+    //    collection.
+    
     var ToOne = function(underlyingObservable) {
        return function(collection) {
            (collection && _(collection).has('models')) || die('Collection passed to `ToOne` missing required `models` attribute:' + collection);
@@ -1021,6 +1037,14 @@ define([
 
                write: function(v) { 
                    if (!v) return v;
+
+                   if (_(v).isString()) {
+                       if ( !_(collection.models).has(v) ) die('Model with URI ' + v +
+                                                               ' was not found in ' + collection.name +
+                                                               ' - this probably indicates an accidental writing of a URI when you need to write a Model');
+                       
+                       return v;
+                   }
 
                    var resource_uri = v.attributes().resource_uri();
 
@@ -1049,7 +1073,29 @@ define([
 
                     return results;
                 },
-                write: function(vs) { return vs ? _(vs).map(function(v) { v.attributes().resource_uri(); }) : vs; }
+                write: function(vs) { 
+                    if (!vs) return vs;
+
+                    return _(vs).map(function(v) {
+                        if (_(v).isString()) {
+                            if ( !_(collection.models).has(v) ) die('Model with URI ' + v +
+                                                                    ' was not found in ' + collection.name +
+                                                                    ' - this probably indicates an accidental writing of a URI when you need to write a Model');
+                            
+                            return v;
+                        }
+
+                        var resource_uri = v.attributes().resource_uri();
+                        
+                        if ( ! _( u(collection.models()) ).has(resource_uri) ) {
+                            var update = {};
+                            update[resource_uri] = v;
+                            collection.models(update);
+                        }
+                        
+                        return resource_uri;
+                    });
+                }
             });
         };
     };
