@@ -1,6 +1,6 @@
 {
     "name": "solidstate",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "A high-level, fluent, state-machine-based, automatic dependency-driven REST client library for Javascript.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
@@ -21,7 +21,7 @@
     "dependencies": {
         "amdefine": ">=0.0.4",
         "backbone": ">=0.9",
-        "contracts-js": ">=0.3.2",
+        "contracts-js": ">=0.3.3",
         "knockout": ">=2.2",
         "requirejs": ">=2.0",
         "underscore":  ">=1.4",
