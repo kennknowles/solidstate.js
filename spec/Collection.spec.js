@@ -78,6 +78,9 @@ define([
 
             assert(createSpy.called);
             expect(u(createSpy.getCall(0).args[0].attributes.foo)).to.equal('zizzle');
+
+            var m2 = extendedC.newModel({ attributes: { foo: referenced } });
+            expect(m2.attributes().foo().attributes().resource_uri()).to.equal('zizzle');
         });
     });
 });

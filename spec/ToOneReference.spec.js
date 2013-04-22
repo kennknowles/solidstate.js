@@ -40,7 +40,7 @@ define([
                 var model = ss.LocalModel({ attributes: { sizzle: null } }).withSubresourcesFrom({ sizzle: collection });
 
                 model.attributes().sizzle(ss.LocalModel({ attributes: { resource_uri: 'bizzle' } }));
-                
+
                 assert(_(collection.models()).has('bizzle'));
             });
         });

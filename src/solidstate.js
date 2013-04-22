@@ -286,18 +286,32 @@ define([
                 })
             });
 
+            impl.underlyingSelf = self;
+
             return new Model(impl);
         };
         
         // Plugs in for the subresources
         self.withSubresourcesFrom = function(subresourceCollections) {
-            var overlayedAttributes = {};
+            var overlayedAttributeDict = {};
 
-            _(subresourceCollections).each(function(subcoll, field) {
-                var relationship = self.relationships(field) || { deref: ToOneReference({from:field}) };
+            var overlayedAttributes = Attributes({
+                // The initial values of the attributes will be ignored, because
+                // all of them will cause a call to `makeAttribute` which sets up the proxying,
+                // so any dictionary with the right keys is fine
+                attributes: subresourceCollections,
 
-                // An observable that will track when the underlying attribute comes into being
-                overlayedAttributes[field] = relationship.deref(self, subcoll);
+                makeAttribute: function(field, value) {
+                    // A new attribute should never be possible, so the only time this is called
+                    // is on initialization, when the value can be ignored because it will be proxied.
+                    var relationship = self.relationships(field) || { deref: ToOneReference({from: field}) };
+
+                    // This observable will write to the underlying attribute properly whether it already existed or not
+                    var overlayedAttribute = relationship.deref(self, subresourceCollections[field]);
+
+                    // Set the underlying attribute immediately
+                    return overlayedAttribute;
+                }
             });
 
             var augmentedSelf = self.withAttributes(overlayedAttributes);
@@ -627,7 +641,10 @@ define([
                 }),
 
                 newModel: function(args) {
-                    return self.newModel(args).withSubresourcesFrom(subresourceCollections);
+                    // self.newModel does not proxy attributes; we need to use m.attributes()
+                    var m = self.newModel(args).withSubresourcesFrom(subresourceCollections);
+                    m.attributes(args.attributes); 
+                    return m;
                 },
                 
                 models: augmentedModels
@@ -998,7 +1015,10 @@ define([
            (collection && _(collection).has('models')) || die('Collection passed to `ToOne` missing required `models` attribute:' + collection);
 
            return transformed(underlyingObservable, {
-               read: function(v) { return v ? u(collection.models()[v]) : v; },
+               read: function(v) { 
+                   return v ? u(collection.models()[v]) : v; 
+               },
+
                write: function(v) { 
                    if (!v) return v;
 

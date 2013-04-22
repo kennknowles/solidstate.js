@@ -49,7 +49,6 @@ define([
             expect(attributes().boomer()).to.equal("bizzle");
             assert(spy.called);
         })
-
     });
 });
 
