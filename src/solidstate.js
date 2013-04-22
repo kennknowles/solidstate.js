@@ -881,6 +881,8 @@ define([
     // A constant link that ignores its input and returns the provided destination collection
     //
     var LinkToCollection = function(destination) {
+        (destination && _(destination).has('models')) || die('Collection provided to `LinkToCollection` missing required field `models`:' + destination);
+
         return new Link({
             resolve: function(sourceCollection) {
                 return destination;
@@ -993,7 +995,7 @@ define([
     //
     var ToOne = function(underlyingObservable) {
        return function(collection) {
-           _(collection).has('models') || die('Collection passed to `ToOne` missing required `models` attribute:' + collection);
+           (collection && _(collection).has('models')) || die('Collection passed to `ToOne` missing required `models` attribute:' + collection);
 
            return transformed(underlyingObservable, {
                read: function(v) { return v ? u(collection.models()[v]) : v; },
@@ -1137,7 +1139,9 @@ define([
         var linkToNamedCollection = function(attr, name) {
             return new Link({
                 resolve: function(src) {
-                    return LinkToCollection(self.collections()[name]).resolve(src).withName(src.name + '.' + attr);
+                    var dst = self.collections()[name] || die('Reference-by-name to unknown collection: ' + name);
+
+                    return LinkToCollection(dst).resolve(src).withName(src.name + '.' + attr);
                 }
             });
         };
