@@ -140,40 +140,50 @@ define([
     var Collections = function(args) {
         args = args || {};
 
-        var relationships = {};
-
         var actualCollections = o({});
-
-        var linkToNamedCollection = function(attr, name) {
+        
+        var linkToNamedCollection = function(name, attr) {
             return new Link({
                 resolve: function(src) {
                     var dst = actualCollections()[name] || die('Reference-by-name to unknown collection: ' + name);
-
-                    return LinkToCollection(dst).resolve(src).withName(src.name + '.' + attr);
+                    
+                    var resolved = LinkToCollection(dst).resolve(src);
+                    if (attr)
+                        resolved = resolved.withName(src.name + '.' + attr);
+                    
+                    return resolved;
                 }
             });
         };
-        
+
         // Relationships default to UrlLink and ToOneReference
         //
         // Underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
+
+        var relationships = {}
+
         _(args.relationships).each(function(relationshipsByDest, sourceName) {
             _(relationshipsByDest).each(function(relationshipParams, attr) {
-                self.relationships[sourceName] = self.relationships[sourceName] || {};
+                relationships[sourceName] = relationships[sourceName] || {};
 
                 var linkTransform = relationshipParams.link || UrlLink({from: attr});
 
-                var link = linkTransform(linkToNamedCollection(attr, relationshipParams.collection));
+                var link = linkTransform(linkToNamedCollection(relationshipParams.collection, attr));
                 _(link).has('resolve') || die('Missing required method `resolve` for Link from `' + sourceName + '.' + attr + 
                                               '` to `' + relationshipParams.collection + '`:\n' + link);
 
-                self.relationships[sourceName][attr] = {
+                relationships[sourceName][attr] = {
                     collection: relationshipParams.collection,
                     link: link,
                     deref: relationshipParams.deref || ToOneReference({from: attr})
                 }
             });
         });
+       
+        ///// wrappedCollections
+        //
+        // The returned value; a computed observable that builds the collections
+        // monotonically and exposes `relationships` and `linkToNamedCollection`
 
         var wrappedCollections = c({
             read: function() { return actualCollections(); },
@@ -195,9 +205,13 @@ define([
                     actualCollections(nextCollections);
             }
         });
-
+        
+        // Set the initial collections if provided
         if (args.collections)
             wrappedCollections(args.collections);
+
+        wrappedCollections.linkToNamedCollection = linkToNamedCollection;
+        wrappedCollections.relationships = relationships;
 
         return wrappedCollections;
     };
@@ -758,6 +772,7 @@ define([
 
         args = args || {};
 
+        self.uri = args.uri || ('fake:' + Math.random(1000).toString()); // A fake uri also so through a few .withNames, we know a link worked, etc.
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
@@ -785,6 +800,23 @@ define([
                 create: self.create
             });
         };
+
+        self.withName = function(name) {
+            return LocalCollection({
+                name: name,
+                uri: self.uri,
+                debug: self.debug,
+                relationships: self.relationships,
+                models: self.models,
+                state: self.state,
+                create: self.create,
+                newModel: self.newModel
+            });
+        };
+
+        self.withData = function(data) { // ignores it
+            return self;
+        }
 
         return new Collection(self);
     };
@@ -1298,41 +1330,9 @@ define([
 
         self.url = w(args.url);
         self.state = o("initial");
-        self.collections = Collections();
+        self.collections = Collections({ relationships: args.relationships });
         self.debug = args.debug || false;
         self.name = args.name || 'solidstate.RemoteApi';
-        self.relationships = {};
-
-        var linkToNamedCollection = function(attr, name) {
-            return new Link({
-                resolve: function(src) {
-                    var dst = self.collections()[name] || die('Reference-by-name to unknown collection: ' + name);
-
-                    return LinkToCollection(dst).resolve(src).withName(src.name + '.' + attr);
-                }
-            });
-        };
-        
-        // Relationships default to UrlLink and ToOneReference
-        //
-        // Underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
-        _(args.relationships).each(function(relationshipsByDest, sourceName) {
-            _(relationshipsByDest).each(function(relationshipParams, attr) {
-                self.relationships[sourceName] = self.relationships[sourceName] || {};
-
-                var linkTransform = relationshipParams.link || UrlLink({from: attr});
-
-                var link = linkTransform(linkToNamedCollection(attr, relationshipParams.collection));
-                _(link).has('resolve') || die('Missing required method `resolve` for Link from `' + sourceName + '.' + attr + 
-                                              '` to `' + relationshipParams.collection + '`:\n' + link);
-
-                self.relationships[sourceName][attr] = {
-                    collection: relationshipParams.collection,
-                    link: link,
-                    deref: relationshipParams.deref || ToOneReference({from: attr})
-                }
-            });
-        });
 
         // The actual API metadata endpoint (a la Tastypie) is implemented as a Backbone model
         // where each attribute is a resource endpoint
@@ -1341,7 +1341,6 @@ define([
         var updateCollections = function(attributes) {
             if (!attributes) return; // changedAttributes returns false, not {}, when nothing has changed
 
-
             var additionalCollections = {};
             _(attributes).each(function(metadata, name) {
                 additionalCollections[name] = RemoteCollection({ 
@@ -1349,7 +1348,7 @@ define([
                     debug: self.debug,
                     url: metadata.list_endpoint,
                     schema_url: metadata.schema,
-                    relationships: function(attr) { return self.relationships[name][attr]; }
+                    relationships: function(attr) { return self.collections.relationships[name][attr]; }
                 });
             });
 
@@ -1372,8 +1371,6 @@ define([
                     } 
                 }
             });
-
-            return self; // Just to be "fluent"
         };
 
         var api = new Api(self);
