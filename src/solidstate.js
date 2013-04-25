@@ -29,6 +29,15 @@ define([
     // Really poor/basic serialization
     var toJValue = function(value) { return JSON.parse(JSON.stringify(value)); };
 
+    _.mixin({ 
+        mapValues: function (input, mapper) {
+            return _.reduce(input, function (obj, v, k) {
+                obj[k] = mapper(v, k, input);
+                return obj;
+            }, {});
+        }
+    });
+    
     // Random Tastypie support code
     var adjustTastypieError = function(err) {
         // Sometimes it is a dictionary keyed by class name, with a list, other times, just a one-element dict with {"error": <some string>}
@@ -94,11 +103,13 @@ define([
     // subscriptions to the models are maintained)
     //
     // args :: {
-    //   models :: String -> Model
+    //   models        :: String -> Model
+    //   relationships :: String -> Relationship
     // }
     var Models = function(args) {
         args = args || {};
 
+        var relationships = args.relationships || function(attr) { return undefined; };
         var actualModels = o({});
 
         var wrappedModels = c({
@@ -114,7 +125,7 @@ define([
                     if (_(nextModels).has(uri)) {
                         nextModels[uri].attributes(model.attributes);
                     } else {
-                        nextModels[uri] = model;
+                        nextModels[uri] = model.withRelationships(relationships);
                         keysChanged = true;
                     }
                 });
@@ -337,15 +348,32 @@ define([
         self.relatedModel = function(attr) {
             var coll = self.relatedCollection(attr);
 
+            var onlyModel = c(function() {
+                return _(coll.models()).values()[0];
+            });
+
             var impl = {
                 name: coll.name,
                 debug: self.debug,
                 url: self.attributes()[attr],
                 relationships: coll.relationships,
-                state: coll.state,
+                state: c(function() { 
+                    if (coll.state !== 'ready') return coll.state();
+                    var model = onlyModel();
+                    if (model) return model.state();
+                    return 'error';
+                }),
+                fetch: function() {
+                    var model = onlyModel();
+                    if (model) model.fetch();
+                },
+                save: function() {
+                    var model = onlyModel();
+                    if (model) model.save();
+                },
                 attributes: c({
                     read: function() {
-                        var model = _(coll.models()).values()[0];
+                        var model = onlyModel();
 
                         if (!model)
                             return {};
@@ -353,7 +381,7 @@ define([
                             return model.attributes();
                     },
                     write: function(newAttributes) {
-                        var model = _(coll.models()).values()[0];
+                        var model = onlyModel();
 
                         if (!model) 
                             return;
@@ -487,6 +515,7 @@ define([
         args = args || {};
         
         self.name = args.name || "(unknown)";
+        self.uri = args.uri || ('fake:' + Math.random(1000).toString()); // A fake uri also so through a few .withNames, we know a link worked, etc.
         self.debug = args.debug || false;
         self.state = o('ready');
         self.fetch = function() { if (args.fetch) args.fetch(self); return self; };
@@ -495,6 +524,8 @@ define([
         self.relationships = args.relationships || function(attr) { return undefined; };
 
         self.attributes = Attributes({ attributes: args.attributes });
+
+        self.toString = function() { return 'LocalModel(...)'; };
         
         return new Model(self);
     };
@@ -801,7 +832,10 @@ define([
         self.relationships = args.relationships || function(attr) { return undefined; };
 
         self.state = o('ready');
-        self.models = Models({ models: args.models });
+        self.models = Models({ 
+            relationships: self.relationships,
+            models: args.models 
+        });
 
         var create = args.create ? args.create : LocalModel;
 
