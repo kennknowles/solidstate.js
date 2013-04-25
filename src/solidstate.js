@@ -141,6 +141,7 @@ define([
         args = args || {};
 
         var actualCollections = o({});
+        var debug = args.debug || false;
         
         var linkToNamedCollection = function(name, attr) {
             return new Link({
@@ -195,7 +196,7 @@ define([
                 
                 _(additionalCollections).each(function(collection, name) {
                     if ( !_(nextCollections).has(name) ) {
-                        if (self.debug) console.log(' - ', name);
+                        if (debug) console.log(' - ', name);
                         nextCollections[name] = collection;
                     }
                     collectionsDidChange = true;
