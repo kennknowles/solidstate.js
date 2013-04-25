@@ -1308,8 +1308,18 @@ define([
     // Just in-memory, must have its collections provided
 
     var LocalApi = function(args) {
+        var self = {};
+
+        self.debug = args.debug || false;
+        self.name = args.name || 'solidstate.RemoteApi';
+        self.fetch = args.fetch || function() { };
         self.state = o('ready');
-        self.collections = o( u(args.collections) || {} );
+        self.collections = Collections({
+            collections: args.collections || {},
+            relationships: args.relationships || {}
+        });
+
+        return new Api(self);
     };
         
     // Api constructor from url
