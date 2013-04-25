@@ -22,11 +22,11 @@ define([
         it("adds querystring filters to the target of a link", function() {
             var src = ss.LocalCollection({
                 models: {
-                    a: { x: 1 },
-                    b: { x: 2 },
-                    c: { x: null },
-                    d: { x: 2 },
-                    e: {}
+                    a: ss.LocalModel({ attributes: { x: 1 } }),
+                    b: ss.LocalModel({ attributes: { x: 2 } }),
+                    c: ss.LocalModel({ attributes: { x: null } }),
+                    d: ss.LocalModel({ attributes: { x: 2 } }),
+                    e: ss.LocalModel({ attributes: { x: undefined } })
                 }
             });
             
@@ -34,11 +34,12 @@ define([
             var dst = new ss.Collection({ models: o({}), withData: withDataSpy });
             var link = ss.LinkToCollection(dst);
 
-            var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.x; } })(link);
+            var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.attributes().x(); } })(link);
 
             var filteredDst = filteredLink.resolve(src);
             var dataObservable = withDataSpy.args[0][0];
-            expect(dataObservable()).to.deep.equal({ my_filter: [1, 2], limit: 0 });
+            expect(dataObservable().limit).to.equal(0);
+            expect(dataObservable().my_filter.sort()).to.deep.equal([1, 2]);
         });
     });
 });

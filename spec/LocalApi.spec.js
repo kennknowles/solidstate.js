@@ -18,7 +18,7 @@ define([
     assert = chai.assert;
 
     describe("LocalApi <: Api", function() {
-        it("Is constructed directly from a dictionary of collections and relationships-by-name", function() {
+        it("Is constructed directly from a dictionary of collections and relationships-by-name, and augments the collections with these relationships", function() {
             var api = ss.LocalApi({
                 collections: {
                     'foo': ss.LocalCollection(),
@@ -29,6 +29,8 @@ define([
                     baz: { bozzle: { collection: 'foo' } }
                 }
             });
+
+            expect(api.collections().foo.relatedCollection('bizzle').uri).to.equal(api.collections().baz.uri);
         });
     });
 });
