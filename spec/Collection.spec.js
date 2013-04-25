@@ -82,5 +82,24 @@ define([
             var m2 = extendedC.newModel({ attributes: { foo: referenced } });
             expect(m2.attributes().foo().attributes().resource_uri()).to.equal('zizzle');
         });
+
+        it('Has .withRelationships that is inherited by its models', function() {
+            var c = ss.LocalCollection({
+                models: {
+                    "/fake/uri/1": ss.LocalModel({ attributes: { bizzle: 'bozzle' } })
+                }
+            });
+
+            expect(c.models()['/fake/uri/1'].relationships('foo')).to.equal(undefined);
+            
+            var c2 = ss.LocalCollection();
+            var c3 = c.withRelationships(function(attr) {
+                return {
+                    link: ss.UrlLink({from: 'bizzle'})(ss.LinkToCollection(c2))
+                };
+            });
+
+            expect(c3.models()['/fake/uri/1'].relationships('foo').link.resolve(c).uri).to.equal(c2.uri);
+        });
     });
 });

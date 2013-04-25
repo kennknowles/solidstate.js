@@ -197,7 +197,7 @@ define([
                 _(additionalCollections).each(function(collection, name) {
                     if ( !_(nextCollections).has(name) ) {
                         if (debug) console.log(' - ', name);
-                        nextCollections[name] = collection;
+                        nextCollections[name] = collection.withRelationships(function(attr) { return relationships[name][attr]; })
                     }
                     collectionsDidChange = true;
                 });
@@ -432,6 +432,14 @@ define([
             }));
         };
 
+        self.withRelationships = function(additionalRelationships) {
+            var impl = _({}).extend(self, {
+                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); }
+            });
+
+            return new Model(impl);
+        };
+
         self.toString = function() { return 'Model()'; };
 
         return self;
@@ -448,11 +456,10 @@ define([
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         self.state = o('ready');
-        self.relationships = args.relationships || function(thisColl, attr) { return null; };
         self.fetch = function() { if (args.fetch) args.fetch(self); return self; };
         self.save = function() { if (args.save) args.save(self); return self; };
         self.attributeErrors = o(args.attributeErrors || {});
-        self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        self.relationships = args.relationships || function(attr) { return undefined; };
 
         self.attributes = Attributes({ attributes: args.attributes });
         
@@ -497,7 +504,7 @@ define([
         self.state = o( _(args).has('state') ? u(args.state) : 'initial' );
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        self.relationships = args.relationships || function(thisColl, attr) { return null; };
+        self.relationships = args.relationships || function(attr) { return undefined; };
         self.attributeErrors = o({});
 
         var attributes = o({});
@@ -716,7 +723,17 @@ define([
 
         self.withRelationships = function(additionalRelationships) {
             var impl = _({}).extend(self, {
-                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); }
+                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); },
+
+                models: c(function() {
+                    var _models = {};
+                    
+                    _(self.models()).each(function(model, uri) {
+                        _models[uri] = model.withRelationships(additionalRelationships);
+                    });
+                    
+                    return _models;
+                })
             });
             
             return new Collection(impl);
@@ -776,7 +793,7 @@ define([
         self.uri = args.uri || ('fake:' + Math.random(1000).toString()); // A fake uri also so through a few .withNames, we know a link worked, etc.
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
+        self.relationships = args.relationships || function(attr) { return undefined; };
 
         self.state = o('ready');
         self.models = Models({ models: args.models });
@@ -1359,7 +1376,6 @@ define([
                     debug: self.debug,
                     url: metadata.list_endpoint,
                     schema_url: metadata.schema,
-                    relationships: function(attr) { return self.collections.relationships[name][attr]; }
                 });
             });
 

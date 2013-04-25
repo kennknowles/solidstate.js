@@ -24,19 +24,19 @@ define([
             var collections = ss.Collections({ collections: { "foo": c } });
 
             expect(_(collections()).keys()).to.deep.equal(['foo']);
-            expect(collections().foo).to.equal(c);
+            expect(collections().foo.uri).to.equal(c.uri);
 
             var c2 = ss.LocalCollection();
             collections({ 'baz': c2 });
             
             expect(_(collections()).keys().sort()).to.deep.equal(['baz', 'foo']);
-            expect(collections().foo).to.equal(c);
-            expect(collections().baz).to.equal(c2);
+            expect(collections().foo.uri).to.equal(c.uri);
+            expect(collections().baz.uri).to.equal(c2.uri);
             
             var c3 = ss.LocalCollection();
             collections({ 'foo': c3 });
-            expect(collections().foo).to.equal(c);
-            expect(collections().baz).to.equal(c2);
+            expect(collections().foo.uri).to.equal(c.uri);
+            expect(collections().baz.uri).to.equal(c2.uri);
         });
 
         it('Provides a link to a named collection', function() {
@@ -60,6 +60,9 @@ define([
             });
 
             expect(colls.relationships.foo.bizzle.link.resolve(c1).uri).to.equal(c2.uri);
+            
+            expect(colls().foo.relatedCollection('bizzle').uri).to.equal(c2.uri);
         });
     });
 });
+
