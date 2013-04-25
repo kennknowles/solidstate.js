@@ -326,12 +326,45 @@ define([
 
         self.relatedCollection = function(attr) { 
             var justThisModelCollection = new Collection({ 
+                name: self.name,
                 state: self.state, 
                 models: c(function() { return [self]; })
             });
 
             return self.relationships(attr).link.resolve(justThisModelCollection);
         };
+
+        self.relatedModel = function(attr) {
+            var coll = self.relatedCollection(attr);
+
+            var impl = {
+                name: coll.name,
+                debug: self.debug,
+                url: self.attributes()[attr],
+                relationships: coll.relationships,
+                state: coll.state,
+                attributes: c({
+                    read: function() {
+                        var model = _(coll.models()).values()[0];
+
+                        if (!model)
+                            return {};
+                        else
+                            return model.attributes();
+                    },
+                    write: function(newAttributes) {
+                        var model = _(coll.models()).values()[0];
+
+                        if (!model) 
+                            return;
+                        else
+                            models.attributes(newAttributes);
+                    }
+                })
+            }
+
+            return new Model(impl);
+        }
 
         self.toJSON = function() {
             var result = {};
@@ -463,14 +496,6 @@ define([
 
         self.attributes = Attributes({ attributes: args.attributes });
         
-        self.relatedModel = function(attr) {
-            return LocalModel({
-                name: self.name + '.' + attr,
-                debug: self.debug,
-                relationships: self.relationships(attr).link.resolve(justThisModelCollection).relationships
-            });
-        };
-
         return new Model(self);
     };
 
@@ -512,26 +537,6 @@ define([
         // Dependency Injection
         var BB = args.Backbone || Backbone;
 
-        // This really ought to be derived from the related collection, but
-        // there is a problem with the layers of observables
-        self.relatedModel = function(attr) {
-            var justThisModelCollection = new Collection({ 
-                state: self.state, 
-                models: c(function() {
-                    var models = {};
-                    models[url] = self;
-                    return models; 
-                })
-            });
-
-            return RemoteModel({
-                name: self.name + '.' + attr,
-                url: self.attributes()[attr],
-                debug: self.debug,
-                relationships: self.relationships(attr).link.resolve(justThisModelCollection).relationships
-            });
-        };
-        
         //  Set up a private Backbone.Model to handle HTTP, etc.
         var bbModel = new (BB.Model.extend({ url: url }))();
         
