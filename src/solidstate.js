@@ -132,6 +132,75 @@ define([
         
         return wrappedModels;
     };
+
+    ///// Collections
+    //
+    //
+
+    var Collections = function(args) {
+        args = args || {};
+
+        var relationships = {};
+
+        var actualCollections = o({});
+
+        var linkToNamedCollection = function(attr, name) {
+            return new Link({
+                resolve: function(src) {
+                    var dst = actualCollections()[name] || die('Reference-by-name to unknown collection: ' + name);
+
+                    return LinkToCollection(dst).resolve(src).withName(src.name + '.' + attr);
+                }
+            });
+        };
+        
+        // Relationships default to UrlLink and ToOneReference
+        //
+        // Underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
+        _(args.relationships).each(function(relationshipsByDest, sourceName) {
+            _(relationshipsByDest).each(function(relationshipParams, attr) {
+                self.relationships[sourceName] = self.relationships[sourceName] || {};
+
+                var linkTransform = relationshipParams.link || UrlLink({from: attr});
+
+                var link = linkTransform(linkToNamedCollection(attr, relationshipParams.collection));
+                _(link).has('resolve') || die('Missing required method `resolve` for Link from `' + sourceName + '.' + attr + 
+                                              '` to `' + relationshipParams.collection + '`:\n' + link);
+
+                self.relationships[sourceName][attr] = {
+                    collection: relationshipParams.collection,
+                    link: link,
+                    deref: relationshipParams.deref || ToOneReference({from: attr})
+                }
+            });
+        });
+
+        var wrappedCollections = c({
+            read: function() { return actualCollections(); },
+            write: function(additionalCollections) {
+                if (!additionalCollections) return;
+
+                var nextCollections = _(actualCollections()).clone();
+                var collectionsDidChange = false;
+                
+                _(additionalCollections).each(function(collection, name) {
+                    if ( !_(nextCollections).has(name) ) {
+                        if (self.debug) console.log(' - ', name);
+                        nextCollections[name] = collection;
+                    }
+                    collectionsDidChange = true;
+                });
+
+                if (collectionsDidChange)
+                    actualCollections(nextCollections);
+            }
+        });
+
+        if (args.collections)
+            wrappedCollections(args.collections);
+
+        return wrappedCollections;
+    };
     
     //
     var transformed = function(underlyingObservable, args) {
@@ -368,8 +437,17 @@ define([
         self.fetch = function() { if (args.fetch) args.fetch(self); return self; };
         self.save = function() { if (args.save) args.save(self); return self; };
         self.attributeErrors = o(args.attributeErrors || {});
+        self.relationships = args.relationships || function(thisColl, attr) { return null; };
 
         self.attributes = Attributes({ attributes: args.attributes });
+        
+        self.relatedModel = function(attr) {
+            return LocalModel({
+                name: self.name + '.' + attr,
+                debug: self.debug,
+                relationships: self.relationships(attr).link.resolve(justThisModelCollection).relationships
+            });
+        };
 
         return new Model(self);
     };
@@ -411,7 +489,9 @@ define([
 
         // Dependency Injection
         var BB = args.Backbone || Backbone;
-        
+
+        // This really ought to be derived from the related collection, but
+        // there is a problem with the layers of observables
         self.relatedModel = function(attr) {
             var justThisModelCollection = new Collection({ 
                 state: self.state, 
@@ -1190,6 +1270,15 @@ define([
 
         self.state = State(impl.state);
     };
+
+    ///// LocalApi
+    //
+    // Just in-memory, must have its collections provided
+
+    var LocalApi = function(args) {
+        self.state = o('ready');
+        self.collections = o( u(args.collections) || {} );
+    };
         
     // Api constructor from url
     //
@@ -1209,7 +1298,7 @@ define([
 
         self.url = w(args.url);
         self.state = o("initial");
-        self.collections = o({});
+        self.collections = Collections();
         self.debug = args.debug || false;
         self.name = args.name || 'solidstate.RemoteApi';
         self.relationships = {};
@@ -1252,33 +1341,19 @@ define([
         var updateCollections = function(attributes) {
             if (!attributes) return; // changedAttributes returns false, not {}, when nothing has changed
 
-            var nextCollections = _(self.collections()).clone();
-            var collectionsDidChange = false;
-            
-            // Adjust any existing collections, add new ones.
-            // Note that this is going to break any existing deps!
+
+            var additionalCollections = {};
             _(attributes).each(function(metadata, name) {
-                var uri = metadata.list_endpoint;
-                
-                if ( _(nextCollections).has(name) ) {
-                    // Do nothing!
-                } else {
-                    if (self.debug) console.log(' - ', name);
-                    nextCollections[name] = RemoteCollection({ 
-                        name: name,
-                        debug: self.debug,
-                        url: uri,
-                        schema_url: metadata.schema,
-                        relationships: function(attr) { return self.relationships[name][attr]; }
-                    });
-                    collectionsDidChange = true;
-                }
+                additionalCollections[name] = RemoteCollection({ 
+                    name: name,
+                    debug: self.debug,
+                    url: metadata.list_endpoint,
+                    schema_url: metadata.schema,
+                    relationships: function(attr) { return self.relationships[name][attr]; }
+                });
             });
-            
-            // Mutate the dict if it has changed
-            if (collectionsDidChange) {
-                self.collections(nextCollections);
-            }
+
+            self.collections(additionalCollections);
         };
 
         var nonce = null;
@@ -1339,10 +1414,12 @@ define([
 
         // Apis
         RemoteApi: RemoteApi,
+        LocalApi: LocalApi,
 
         // Helpers
         Attributes: Attributes,
         Models: Models,
+        Collections: Collections,
         State: State,
 
         // Misc, probably "private"

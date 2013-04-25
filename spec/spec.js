@@ -6,6 +6,7 @@ define([
     './Attributes.spec',
     './BBWriteThroughObservable.spec',
     './Collection.spec',
+    './Collections.spec',
     './FilterLink.spec',
     './LocalModel.spec',
     './LocalCollection.spec',
