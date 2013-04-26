@@ -342,7 +342,8 @@ define([
                 models: c(function() { return [self]; })
             });
 
-            return self.relationships(attr).link.resolve(justThisModelCollection);
+            var dst = self.relationships(attr).link.resolve(justThisModelCollection);
+            return dst;
         };
 
         self.relatedModel = function(attr) {
@@ -757,7 +758,15 @@ define([
     // "saving"   --[ success ]--> "ready"
 
     var Collection = function(implementation) {
-        var self = _(this).extend(implementation);
+        var self = this;
+
+        self.name = implementation.name;
+
+        self.models = implementation.models;
+
+        self.relationships = implementation.relationships;
+
+        self.newModel = implementation.newModel;
         
         self.data = w(implementation.data || {});
             
@@ -783,13 +792,13 @@ define([
         // Special fluent method for remote collections
         //
         self.withData = function(additionalData) { 
-            return new Collection(_({}).extend(self, {
+            return new Collection(_({}).extend(implementation, {
                 data: c(function() { return _({}).extend(self.data(), u(additionalData)); }),
             }));
         };
 
         self.withRelationships = function(additionalRelationships) {
-            var impl = _({}).extend(self, {
+            var impl = _({}).extend(implementation, {
                 relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); },
 
                 models: c(function() {
@@ -818,7 +827,7 @@ define([
                 return _models;
             });
             
-            var impl = _({}).extend(self, {
+            var impl = _({}).extend(implementation, {
                 state: c(function() {
                     var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
                     if ( m ) 
@@ -841,7 +850,7 @@ define([
         };
         
         self.withName = function(name) {
-            return new Collection(_({}).extend(self, {
+            return new Collection(_({}).extend(implementation, {
                 name: name
             }));
         };
@@ -1006,7 +1015,7 @@ define([
         };
         
         self.fetch = function(_data) {
-            if (self.debug) console.log(self.name, '-->', self.url(), '?', u(self.data)); //URI().query(self.data()).query());
+            if (self.debug) console.log(self.name, '-->', self.url(), '?', u(_data)); //URI().query(self.data()).query());
 
             if (_(_data).any(function(v) { return v === NOFETCH; })) {
                 if (self.debug) console.log(self.name, '<--', self.url(), '(not bothering)');
@@ -1368,6 +1377,7 @@ define([
         self.fetch = args.fetch || function() { return self; };
         self.state = o('ready');
         self.collections = Collections({
+            debug: self.debug,
             collections: args.collections || {},
             relationships: args.relationships || {}
         });
@@ -1393,8 +1403,8 @@ define([
 
         self.url = w(args.url);
         self.state = o("initial");
-        self.collections = Collections({ relationships: args.relationships });
         self.debug = args.debug || false;
+        self.collections = Collections({ debug: self.debug, relationships: args.relationships });
         self.name = args.name || 'solidstate.RemoteApi';
 
         // The actual API metadata endpoint (a la Tastypie) is implemented as a Backbone model
