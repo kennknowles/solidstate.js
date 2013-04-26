@@ -365,7 +365,10 @@ define([
                 }),
                 fetch: function() {
                     var model = onlyModel();
-                    if (model) model.fetch();
+                    if (model) 
+                        model.fetch();
+                    else
+                        coll.fetch();
                 },
                 save: function() {
                     var model = onlyModel();
