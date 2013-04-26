@@ -208,7 +208,7 @@ define([
                 _(additionalCollections).each(function(collection, name) {
                     if ( !_(nextCollections).has(name) ) {
                         if (debug) console.log(' - ', name);
-                        nextCollections[name] = collection.withRelationships(function(attr) { return relationships[name][attr]; })
+                        nextCollections[name] = collection.withName(name).withRelationships(function(attr) { return relationships[name][attr]; })
                     }
                     collectionsDidChange = true;
                 });
@@ -501,6 +501,14 @@ define([
             return new Model(impl);
         };
 
+        self.withName = function(name) {
+            var impl = _({}).extend(self, {
+                name: name
+            });
+
+            return new Model(impl);
+        };
+
         self.toString = function() { return 'Model()'; };
 
         return self;
@@ -754,6 +762,8 @@ define([
 
         self.state = State(implementation.state);
 
+        if ( typeof self.toString === 'undefined' ) self.toString = function() { return 'Collection' };
+
         //self.withData = function(data) { return new Collection(implementation.withData(data)); }
         //self.withName = function(name) { return new Collection(implementation.withName(name)); }
 
@@ -834,8 +844,10 @@ define([
         self.state = o('ready');
         self.models = Models({ 
             relationships: self.relationships,
-            models: args.models 
+            models: _.chain(u(args.models)).map(function(model, key) { return [key, model.withName(self.name+'['+key+']')]; }).object().value()
         });
+
+        self.fetch = args.fetch || function() { return self; };
 
         var create = args.create ? args.create : LocalModel;
 
@@ -864,7 +876,7 @@ define([
                 uri: self.uri,
                 debug: self.debug,
                 relationships: self.relationships,
-                models: self.models,
+                models: _.chain(self.models()).map(function(model, key) { return [key, model.withName(self.name+'['+key+']')]; }).object().value(),
                 state: self.state,
                 create: self.create,
                 newModel: self.newModel
@@ -872,7 +884,7 @@ define([
         };
 
         self.withData = function(data) { // ignores it
-            return self;
+            return new Collection(self);
         }
 
         return new Collection(self);
@@ -1369,7 +1381,7 @@ define([
 
         self.debug = args.debug || false;
         self.name = args.name || 'solidstate.RemoteApi';
-        self.fetch = args.fetch || function() { };
+        self.fetch = args.fetch || function() { return self; };
         self.state = o('ready');
         self.collections = Collections({
             collections: args.collections || {},
@@ -1437,6 +1449,8 @@ define([
                     } 
                 }
             });
+
+            return self;
         };
 
         var api = new Api(self);
