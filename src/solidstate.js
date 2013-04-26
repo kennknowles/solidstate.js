@@ -756,6 +756,8 @@ define([
     var Collection = function(implementation) {
         var self = _(this).extend(implementation);
         
+        self.data = w(implementation.data || {});
+            
         self.relatedCollection = function(attr) { 
             var rel = self.relationships(attr);
 
@@ -764,7 +766,8 @@ define([
             return self.relationships(attr).link.resolve(self); 
         };
 
-        self.fetch = function() { implementation.fetch(); return self; };
+        self.fetch = function() { implementation.fetch( _({}).extend(self.data()) ); return self; };
+        self.data.subscribe(function() { if (self.state() !== "initial") self.fetch(); });
 
         self.state = State(implementation.state);
 
@@ -772,6 +775,15 @@ define([
 
         //self.withData = function(data) { return new Collection(implementation.withData(data)); }
         //self.withName = function(name) { return new Collection(implementation.withName(name)); }
+        
+        //
+        // Special fluent method for remote collections
+        //
+        self.withData = function(additionalData) { 
+            return new Collection(_({}).extend(self, {
+                data: c(function() { return _({}).extend(self.data(), u(additionalData)); }),
+            }));
+        };
 
         self.withRelationships = function(additionalRelationships) {
             var impl = _({}).extend(self, {
@@ -823,6 +835,12 @@ define([
             });
 
             return new Collection(impl); //.withName(self.name + '{'+ _(subresourceCollections).keys().join(',') +'}');
+        };
+        
+        self.withName = function(name) {
+            return new Collection(_({}).extend(self, {
+                name: name
+            }));
         };
 
         self.withRelatedSubresources = function() {
@@ -876,23 +894,6 @@ define([
             });
         };
 
-        self.withName = function(name) {
-            return LocalCollection({
-                name: name,
-                uri: self.uri,
-                debug: self.debug,
-                relationships: self.relationships,
-                models: _.chain(self.models()).map(function(model, key) { return [key, model.withName(self.name+'['+key+']')]; }).object().value(),
-                state: self.state,
-                create: self.create,
-                newModel: self.newModel
-            });
-        };
-
-        self.withData = function(data) { // ignores it
-            return new Collection(self);
-        }
-
         return new Collection(self);
     };
     
@@ -908,7 +909,6 @@ define([
         var self = {};
         
         self.url = w(args.url);
-        self.data = w(args.data || {});
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
         self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
@@ -1002,10 +1002,9 @@ define([
             });
         };
         
-        self.fetch = function() {
+        self.fetch = function(_data) {
             if (self.debug) console.log(self.name, '-->', self.url(), '?', u(self.data)); //URI().query(self.data()).query());
 
-            var _data = _({}).extend(self.data());
             if (_(_data).any(function(v) { return v === NOFETCH; })) {
                 if (self.debug) console.log(self.name, '<--', self.url(), '(not bothering)');
                 self.state("ready"); // Equivalent to having fetched instantaneously and gotten no results
@@ -1027,20 +1026,6 @@ define([
             
             return self; // Just to be "fluent"
         };
-        self.data.subscribe(function() { if (self.state() !== "initial") self.fetch(); });
-
-        //
-        // Special fluent method for remote collections
-        //
-        self.withData = function(additionalData) { 
-            return RemoteCollection({
-                name: self.name,
-                debug: self.debug,
-                url: self.url,
-                data: c(function() { return _({}).extend(self.data(), u(additionalData)); }),
-                relationships: self.relationships
-            });
-        };
 
         self.withParam = function(additionalParam) {
             var newUrl = c(function() {
@@ -1059,16 +1044,6 @@ define([
             });
         };
         
-        self.withName = function(name) { 
-            return RemoteCollection({
-                name: name,
-                debug: self.debug,
-                url: self.url,
-                data: self.data,
-                relationships: self.relationships
-            });
-        };
-
         return new Collection(self);
     };
 

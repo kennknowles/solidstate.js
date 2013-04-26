@@ -30,18 +30,15 @@ define([
                 }
             });
 
-            var withDataSpy = sinon.spy();
             var dst = new ss.Collection({
                 models: o({}),
-                withData: withDataSpy
             });
             
             var link = ss.LinkToCollection(dst);
             var urlLink = ss.UrlLink({ from: 'x', })(link);
 
             var filteredDst = urlLink.resolve(src);
-            var dataObservable = withDataSpy.args[0][0];
-            expect(dataObservable()).to.deep.equal({ id__in: ['1', '47'], limit: 0 });
+            expect(filteredDst.data()).to.deep.equal({ id__in: ['1', '47'], limit: 0 });
         });
     });
 });

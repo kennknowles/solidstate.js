@@ -31,15 +31,15 @@ define([
             });
             
             var withDataSpy = sinon.spy();
-            var dst = new ss.Collection({ models: o({}), withData: withDataSpy });
+            var dst = new ss.Collection({ models: o({}) });
             var link = ss.LinkToCollection(dst);
 
             var filteredLink = ss.FilterLink({ my_filter: function(model) { return model.attributes().x(); } })(link);
 
             var filteredDst = filteredLink.resolve(src);
-            var dataObservable = withDataSpy.args[0][0];
-            expect(dataObservable().limit).to.equal(0);
-            expect(dataObservable().my_filter.sort()).to.deep.equal([1, 2]);
+
+            expect(filteredDst.data().limit).to.equal(0);
+            expect(filteredDst.data().my_filter.sort()).to.deep.equal([1, 2]);
         });
     });
 });
