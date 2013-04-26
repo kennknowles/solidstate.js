@@ -756,7 +756,13 @@ define([
     var Collection = function(implementation) {
         var self = _(this).extend(implementation);
         
-        self.relatedCollection = function(attr) { return self.relationships(attr).link.resolve(self); };
+        self.relatedCollection = function(attr) { 
+            var rel = self.relationships(attr);
+
+            if (!rel) die('No known relationship for ' + self.name + ' via attribute ' + attr);
+
+            return self.relationships(attr).link.resolve(self); 
+        };
 
         self.fetch = function() { implementation.fetch(); return self; };
 
