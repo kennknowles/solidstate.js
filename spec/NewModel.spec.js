@@ -55,32 +55,24 @@ define([
 
     describe("NewModel <: Model", function() {
         it("Passes the current values from the LocalModel to the `create` function", function() {
-            var wrapper = {
-                newModel: function(args) {
-                    return {
-                        state: o('ready'),
-                        model: o(ss.LocalModel(args))
-                    };
-                }
-            };
-            var spy = sinon.spy(wrapper, 'newModel');
+            var backend = ss.LocalCollectionBackend()
+            var create = sinon.spy();
 
             var m = ss.NewModel({
                 name: 'me',
-                attributes: {
-                    foo: 'baz'
-                },
-                create: wrapper.newModel
+                attributes: { foo: 'baz' },
+                create: create
             });
+            console.log(m.name);
 
-            assert(!spy.called);
+            assert(!create.called);
             m.attributes().foo('bizzle');
             m.save();
-            assert(spy.called, 'newModel not called');
+            assert(create.called, '`create` not called');
             
-            var args = spy.args[0][0];
-            expect(args.name).to.equal('me');
-            expect(u(u(args.attributes).foo)).to.equal('bizzle');
+            var args = create.args[0][0];
+            expect(u(args.name)).to.equal('me');
+            expect(u(args.attributes.foo)).to.equal('bizzle');
         });
 
         it("When errors occur, stores them in attributeErrors() and returns to the initial state", function(done) {

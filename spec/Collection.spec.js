@@ -19,7 +19,36 @@ define([
     expect = chai.expect,
     assert = chai.assert;
 
-    describe("Collection (fluent interface wrapper)", function() {
+    describe("Collection", function() {
+        it("Can be constructed with a basic obsevable state that will be used", function() {
+            var state = o('ready');
+            var c = ss.Collection({ state: state });
+
+            expect(c.state()).to.equal('ready');
+            state('fetching');
+            expect(c.state()).to.equal('fetching');
+        });
+        
+        it("Can be constructed with a State object for a state", function() {
+        // Yes a state
+            var state = ss.State('ready');
+            var c = ss.Collection({ state: state });
+            expect(c.state()).to.equal('ready');
+            state('fetching');
+            expect(c.state()).to.equal('fetching');
+        });
+
+        it("Can have its state replaced by .withState", function() {
+            var c = ss.Collection();
+            expect(c.state()).to.equal('initial');
+            
+            var state2 = ss.State('ready');
+            var c2 = c.withState(state2);
+            expect(c2.state()).to.equal('ready');
+            state2('fetching');
+            expect(c2.state()).to.equal('fetching');
+        });
+
         it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from theirs", function() {
 
             var impl = {
@@ -59,13 +88,9 @@ define([
         });
         
         it("Creates new models with .newModel that appropriately proxy subresources", function() {
-            var f = function(args) { return ss.LocalModel(args); };
-            var createSpy = sinon.spy(f);
-            var c = ss.LocalCollection({
-                state: o("ready"),
-                models: o({}),
-                create: createSpy
-            });
+            var backend = ss.LocalCollectionBackend();
+            var createSpy = sinon.spy(backend, 'create');
+            var c = ss.Collection(backend);
 
             var referenced = ss.LocalModel({ attributes: { resource_uri: 'zizzle' } });
 

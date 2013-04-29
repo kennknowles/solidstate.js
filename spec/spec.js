@@ -15,7 +15,7 @@ define([
     './Models.spec',
     './NewModel.spec',
     './RemoteModel.spec',
-    './RemoteCollection.spec',
+    './RemoteCollectionBackend.spec',
     './ToManyReference.spec',
     './ToOneReference.spec',
     './UrlLink.spec',
