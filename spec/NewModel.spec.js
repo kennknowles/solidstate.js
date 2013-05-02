@@ -56,14 +56,13 @@ define([
     describe("NewModel <: Model", function() {
         it("Passes the current values from the LocalModel to the `create` function", function() {
             var backend = ss.LocalCollectionBackend()
-            var create = sinon.spy();
+            var create = sinon.spy(backend, 'create');
 
             var m = ss.NewModel({
                 name: 'me',
                 attributes: { foo: 'baz' },
                 create: create
             });
-            console.log(m.name);
 
             assert(!create.called);
             m.attributes().foo('bizzle');
@@ -76,49 +75,40 @@ define([
         });
 
         it("When errors occur, stores them in attributeErrors() and returns to the initial state", function(done) {
-            var wrapper = {
-                newModel: function(args) {
-                    var deferred = when.defer()
-                    deferred.reject({'__all__': 'Die'});
-                    return deferred.promise;
-                }
-            };
-            var spy = sinon.spy(wrapper, 'newModel');
+            var create = sinon.spy(function(args) {
+                var deferred = when.defer()
+                deferred.reject({'__all__': 'Die'});
+                return deferred.promise;
+            });
 
             var m = ss.NewModel({
                 name: 'me',
                 attributes: {
                     foo: 'baz'
                 },
-                create: wrapper.newModel
+                create: create
             });
 
-            assert(!spy.called, 'newModel called too soon');
+            assert(!create.called, 'newModel called too soon');
             m.attributes().foo('bizzle');
             m.save();
-            assert(spy.called, 'newModel not called');
+            assert(create.called, 'newModel not called');
             
-            var args = spy.args[0][0];
+            var args = create.args[0][0];
             expect(args.name).to.equal('me');
             expect(u(u(args.attributes).foo)).to.equal('bizzle');
 
-            when(m.state.reaches('initial'),
-                 function() {
-                     expect(m.attributeErrors()).to.deep.equal({'__all__': 'Die'});
-                     done();
-                 });
+            when(m.state.reaches('initial'))
+                .then(function() {
+                    expect(m.attributeErrors()).to.deep.equal({'__all__': 'Die'});
+                    done();
+                });
         });
 
         it("Prior to a save, can still have withSubresourcesFrom proxy its attributes", function() {
-            var wrapper = {
-                newModel: function(args) {
-                    return {
-                        state: o('ready'),
-                        model: o(ss.LocalModel(args))
-                    };
-                }
-            };
-            var spy = sinon.spy(wrapper, 'newModel');
+            var create = sinon.spy(function(args) {
+                return when.resolve(ss.LocalModel(args));
+            })
 
             var m = ss.NewModel({
                 name: 'me',
@@ -126,7 +116,7 @@ define([
                     foo: 'baz',
                     link: 'to_resource'
                 },
-                create: wrapper.newModel
+                create: create
             });
 
             var m2 = m.withSubresourcesFrom({ 
@@ -147,7 +137,7 @@ define([
             
             m2.save();
             
-            var args = spy.args[0][0];
+            var args = create.args[0][0];
             expect(args.name).to.equal('me');
             expect(u(u(args.attributes).link)).to.equal('to_resource');
             expect(m2.attributes().link().attributes().resource_uri()).to.equal('to_resource');
@@ -163,12 +153,12 @@ define([
                     foo: 'baz'
                 },
                 create: function(args) {
-                    return when(savingDeferred, 
-                                function() {
-                                    var deferred = when.defer();
-                                    deferred.resolve(savedModel);
-                                    return deferred.promise
-                                });
+                    return when(savingDeferred)
+                        .then(function() {
+                            var deferred = when.defer();
+                            deferred.resolve(savedModel);
+                            return deferred.promise
+                        });
                 }
             });
 
@@ -180,13 +170,14 @@ define([
             expect(m.state()).to.equal('saving');
             savingDeferred.resolve();
             
-            when(m.state.reaches('ready'), function() {
-                expect(m.attributes().foo()).to.equal('bizzle');
-                expect(m.state()).to.equal('ready');
-                m.attributes().foo('boing');
-                expect(savedModel.attributes().foo()).to.equal('boing');
-                done();
-            });
+            when(m.state.reaches('ready'))
+                .then(function() {
+                    expect(m.attributes().foo()).to.equal('bizzle');
+                    expect(m.state()).to.equal('ready');
+                    m.attributes().foo('boing');
+                    expect(savedModel.attributes().foo()).to.equal('boing');
+                    done()
+                });
         });
     });
 });

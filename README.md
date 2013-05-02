@@ -6,12 +6,12 @@ https://github.com/kennknowles/solidstate.js
 [![Build status](https://travis-ci.org/kennknowles/solidstate.js.png)](https://travis-ci.org/kennknowles/solidstate.js)
 [![NPM version](https://badge.fury.io/js/solidstate.png)](http://badge.fury.io/js/solidstate)
 
-A high-level, fluent, state-machine-based, automatic dependency-driven REST client library for Javascript.
+A high-level & highly automatic REST client for Javascript with a dramatically simple & fluent API.
 
 Quick Intro
 -----------
 
-This module builds upon Backbone and Knockout, providing an even more convenient
+This module builds upon Backbone, Knockout and When, providing an even more convenient
 interface for accessing your backend API. 
 
  - `Model`: A single resource with observable `state` and `attributes`.
@@ -36,6 +36,11 @@ Here is a concise summary of the interfaces, where `*` means "anything" and ever
 ```javascript
 URL = String
 
+State <: Observable ("initial" | "ready" | "fetching" | "saving")
+State = {
+  reaches : Promise ()
+}
+
 Model = {
   state       : observable ( "initial" | "ready" | "fetching" | "saving")
   attributes  : observable { String: observable * }
@@ -44,8 +49,6 @@ Model = {
 
   relatedCollection : String -> Collection
   relatedModel      : String -> Model
-
-  when : String -> (() -> ()) -> () // first param is goal state, not event!
 
   withState               : observable String -> Model
   withAttributes          : observable { String: observable * } -> Model

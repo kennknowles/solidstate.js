@@ -30,9 +30,7 @@ define([
                 }
             });
 
-            var dst = new ss.Collection({
-                models: o({}),
-            });
+            var dst = ss.LocalCollection();
             
             var link = ss.LinkToCollection(dst);
             var urlLink = ss.UrlLink({ from: 'x', })(link);

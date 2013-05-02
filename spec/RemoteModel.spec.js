@@ -33,7 +33,8 @@ define([
             };
 
             var model  = ss.RemoteModel({
-                url: '/some/fake/url',
+                name: 'foozle',
+                uri: '/some/fake/url',
                 Backbone: MockBackbone
             });
 

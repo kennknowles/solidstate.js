@@ -19,7 +19,7 @@ define([
     assert = chai.assert;
 
     describe("RemoteCollectionBackend <: Collection", function() {
-        it('.fetch() returns a promise that resolves when remote models come in', function(done) {
+        it('.fetchModels() returns a promise that resolves when remote models come in', function(done) {
 
             // Set up a mock Backbone that will intercept the fetch and return the appropriate value
             var fetch = sinon.spy();
@@ -39,7 +39,7 @@ define([
             });
 
             // The business
-            var promise = backend.fetch();
+            var promise = backend.fetchModels();
 
             // Set up the test to complete with known models
             var bbModels = [ new Backbone.Model({ resource_uri: 'foo' }) ];
@@ -56,6 +56,14 @@ define([
             // Fulfill the promise with a made-up backbone model
             var args = fetch.args[0][0];
             args.success({ models: bbModels });
+        });
+
+        it(".create(...) returns a promise that resolves with the created RemoteModel", function() {
+
+        });
+
+        it(".create(...) returns a promise that rejects with any errors from the server", function() {
+
         });
     });
 });

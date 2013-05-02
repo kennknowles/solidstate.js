@@ -1,28 +1,30 @@
 /* jshint -W070 */
 /* jshint -W064 */
 /* jshint -W025 */
+/* jshint -W055 */
 /* jshint -W030 */
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
     'backbone', 
-    //'contracts-js',
+    'contracts-js',
     'knockout',
     'underscore',
     'URIjs',
-    'when',
-], function(Backbone, /*contracts,*/ ko, _, URI, when) {
+    'when'
+], function(Backbone, contracts, ko, _, URI, when) {
     'use strict';
     
-    //contracts.enabled(false);
+    contracts.enabled(false);
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
-    var o = ko.observable,
+    var C = contracts,
+        o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed,
         w = function(v) { return ko.isObservable(v) ? v : o(v); },
         die = function(msg) { throw new Error(msg); };
-    
+
     _.mixin({ 
         mapValues: function (input, mapper) {
             return _.reduce(input, function (obj, v, k) {
@@ -50,6 +52,7 @@ define([
 
     // type observableLike = a | ko.observable a
     
+    var i = C.guard(C.Num, 3);
     
     ///// Attributes
     //
@@ -96,21 +99,17 @@ define([
 
         return wrappedAttributes;
     };
-    
-    // Models
+
+
+    ///// Models
     //
     // An observable dictionary with the property that writing the whole dictionary
     // actually writes the *attributes* of each item in the dictionary, (so that
     // subscriptions to the models are maintained)
-    //
-    // args :: {
-    //   models        :: String -> Model
-    //   relationships :: String -> Relationship
-    // }
+    
     var Models = function(args) {
         args = args || {};
 
-        var relationships = args.relationships || function(attr) { return undefined; };
         var actualModels = o({});
 
         var wrappedModels = c({
@@ -126,7 +125,7 @@ define([
                     if (_(nextModels).has(uri)) {
                         nextModels[uri].attributes(model.attributes);
                     } else {
-                        nextModels[uri] = model.withRelationships(relationships);
+                        nextModels[uri] = model;
                         keysChanged = true;
                     }
                 });
@@ -144,6 +143,7 @@ define([
         
         return wrappedModels;
     };
+
 
     ///// Collections
     //
@@ -170,8 +170,6 @@ define([
         };
 
         // Relationships default to UrlLink and ToOneReference
-        //
-        // Underscore maintainers have rejected implementing proper map for objects, so do it mutatey-like
 
         var relationships = {}
 
@@ -273,8 +271,8 @@ define([
     //   attributeErrors :: observable { String -> observable [String] } // for validation or backend errors, etc
     //   attr            :: String -> observable // Returns an observable that will read/write the attribute ONLY if present
     //
-    //   fetch      :: () -> ()
-    //   save       :: () -> ()
+    //   fetch      :: () -> () // A wrapper on the passed-in fetch (which returns a promise) that will always write the state to "fetching" then "ready"
+    //   save       :: () -> () // A wrapper on the passed-in save (which returns a promise) that will always write the state to "saving" then "ready"
     //
     //   relationships     :: String -> Relationship
     // }
@@ -301,13 +299,26 @@ define([
     //   relatedModel      :: String -> Model       // Just looks up by URL
     //   relatedCollection :: String -> Collection  // Looks up via relationships
     //
-    //   when :: (String, () -> ()) -> ()
     // }
 
-    var Model = function(args) {
-        if ( !(this instanceof Model) ) return new Model(args);
+    var Model = function(implementation) {
+        if ( !(this instanceof Model) ) return new Model(implementation);
 
         var self = this;
+
+        ///// name :: String
+        //
+        // A name used in debugging messages
+        
+        self.name = implementation.name || die('Model implementation missing mandatory field `name`');
+
+
+        ///// state :: State ("initial" | "fetching" | "ready")
+        //
+        // Uses the passed-in state or creates its own. It is mandatory
+        // that the state have a `reaches` method that returns a Promise ().
+
+        self.state = implementation.state || die('Model implementation missing mandatory field `state`');
 
 
         ///// attributes :: Attributes
@@ -315,7 +326,7 @@ define([
         // If the implementation passes in some attributes that are any sort of observable,
         // then it will be used, otherwise some fresh attributes are created.
 
-        self.attributes = ko.isObservable(args.attributes) ? args.attributes : Attributes({ attributes: args.attributes });
+        self.attributes = implementation.attributes || die('Model implementation missing mandatory field `attributes`');
 
         
         ///// attributeErrors :: {String: [String]}
@@ -323,7 +334,7 @@ define([
         // A mapping from attribute name to messages about validation problems with that attribute.
         // There is a special key __all__ that should have all of those and also global errors.
 
-        self.attributeErrors = args.attributeErrors || o({});
+        self.attributeErrors = implementation.attributeErrors || die('Model implementation missing mandatory field `attributeErrors`');
 
         
         ///// relationships :: String -> Relationship
@@ -331,27 +342,94 @@ define([
         // A function that maps each attribute to the Relationship
         // between collections for that attribute.
 
-        self.relationships = args.relationships || function(attribute) { return undefined; };
+        self.relationships = implementation.relationships || function(attribute) { return undefined; };
+
+        
+        ///// fetchAttributes :: () -> Promise Attributes
+        //
+        // A promise that resolves to the current models attributes
+
+        self.fetchAttributes = implementation.fetchAttributes || die('Model implementation missing required field `fetchAttributes`');
+
+
+        ///// saveAttributes :: Attributes -> Promise ()
+        //
+        // Saves the attributes for this model to whatever backend
+        
+        self.saveAttributes = implementation.saveAttributes || die('Model implementation missing required field `saveAttributes`');
+
+
+        // Derived & Fluent Combinators
+        // ----------------------------
+
+        
+        ///// with :: overrides -> Model
+        //
+        // The "master" combinator for overwriting fields of the Collection constructor
+        
+        self.withFields = function(implementationFields) {
+            return Model( _({}).extend(implementation, implementationFields) );
+        };
+        
+
+        ///// withRelationships :: (String -> Relationship) -> Model
+        //
+        // Overlays the provided relationship function to this model.
+
+        self.withRelationships = function(additionalRelationships) {
+            return self.withFields({ relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); } });
+        };
+
+        
+        ///// withName :: String -> Model
+        //
+        // Replaces the current name.
+
+        self.withName = function(name) {
+            return self.withFields({ name: name });
+        };
+        
+
+        ///// withState :: State -> Model
+        //
+        // Overlays a state on top of this model's state
+
+        self.withState = function(state) {
+            return self.withFields({
+                state: c({
+                    read: function() { return state() === 'ready' ? self.state() : state(); },
+                    write: function(newValue) { self.state(newValue); }
+                })
+            });
+        };
+
 
 
         ///// fetch :: () -> Self
         //
-        // Returns this collection after firing off a fetch request via the backend.
+        // Returns this model after firing off a fetch reques
         // While the fetch is in progress, sets the state to 'fetching', after which
-        // it will be restored to 'ready'.
+        // it will be restored to 'ready' unless another request intervenes.
 
+        var nonce = null;
+        var newNonce = function() { nonce = Math.random(); return nonce; };
         self.fetch = function() { 
-            var doneFetching = args.fetch(); 
+            if (self.debug) console.log(self.name, '-->', u(self.uri));
+
+            var myNonce = newNonce();
+            var doneFetching = implementation.fetchAttributes(); 
 
             var priorState = self.state.peek();
 
             when(doneFetching)
                 .then(function(attributes) {
+                    if (nonce !== myNonce) return;
                     self.attributes(attributes);
                     self.state('ready');
                 })
                 .otherwise(function(error) {
-                    console.error(error);
+                    if (nonce !== myNonce) return;
+                    console.error(error.stack);
                     self.state(priorState);
                 })
 
@@ -359,35 +437,27 @@ define([
         };
 
         
-        // save :: () -> Self
+        ///// save :: () -> Self
         //
-        // Return this collection after firing of a save request via the backend.
-        // While the save is in progress, sets self.state to "saving", after which
-        // it will be restored to "ready".
+        // Saves the model's attributes.
 
         self.save = function() { 
-            var doneSaving = args.save(self.attributes); 
+            var myNonce = newNonce();
+            var doneSaving = implementation.saveAttributes(self.attributes); 
             
             when(doneSaving)
                 .then(function() {
+                    if (nonce !== myNonce) return;
                     self.state('ready');
                 })
                 .otherwise(function(attributeErrors) {
+                    if (nonce !== myNonce) return;
                     self.attributeErrors(attributeErrors);
                     self.state('ready');
                 });
 
             return self; 
         };
-
-
-        ///// state :: State ("initial" | "fetching" | "ready")
-        //
-        // If the thing passed in looks like it is already an observable
-        // state, with a `reaches` attribute, then it will be used directly,
-        // otherwise the value will be assumed to be an initial state.
-
-        self.state = (ko.isObservable(args.state) && _(args.state).has('reaches')) ? args.state : State(args.state || "initial");
 
 
         ///// attr :: String -> Observable *
@@ -420,9 +490,14 @@ define([
         // to just this model.
 
         self.relatedCollection = function(attr) { 
-            var justThisModelCollection = new Collection({ 
+            var justThisModelCollection = Collection({ 
+                uri: 'fake:uri',
                 name: self.name,
-                state: self.state, 
+                state: self.state,
+                data: o({}),
+                create: function(creationArgs) { },
+                fetchModels: function(data) { },
+                relationships: self.relationships,
                 models: c(function() { return [self]; })
             });
 
@@ -437,55 +512,55 @@ define([
 
         self.relatedModel = function(attr) {
             var coll = self.relatedCollection(attr);
-            console.log(u(coll.data));
 
             var onlyModel = c(function() {
                 return _(coll.models()).values()[0];
             });
 
-            var impl = {
+            // Wrap each of the bits of the other model into
+            // a model implementation
+            var modelImplementation = {
                 name: coll.name,
+
                 debug: self.debug,
+
                 url: self.attributes()[attr],
+
                 relationships: coll.relationships,
-                state: c(function() { 
+
+                state: State(c(function() { 
                     if (coll.state !== 'ready') return coll.state();
                     var model = onlyModel();
                     if (model) return model.state();
                     return 'error';
-                }),
-                fetch: function() {
-                    var model = onlyModel();
-                    if (model) 
-                        model.fetch();
-                    else
+                }).extend({throttle: 1})),
+
+                fetchAttributes: function() {
+                    // If the collection has not been fetched, then
+                    // we can fetch it and return the attributes of
+                    // the model when ready
+                    if (onlyModel()) {
+                        return onlyModel().fetchAttributes();
+                    } else {
                         coll.fetch();
-                },
-                save: function() {
-                    var model = onlyModel();
-                    if (model) model.save();
-                },
-                attributes: c({
-                    read: function() {
-                        var model = onlyModel();
-
-                        if (!model)
-                            return {};
-                        else
-                            return model.attributes();
-                    },
-                    write: function(newAttributes) {
-                        var model = onlyModel();
-
-                        if (!model) 
-                            return;
-                        else
-                            models.attributes(newAttributes);
+                        ko.monitor({s: coll.state});
+                        return coll.state.reaches('ready').then(function() {
+                            return when.resolve(onlyModel().attributes());
+                        });
                     }
-                })
-            }
+                },
 
-            return new Model(impl);
+                saveAttributes: function(attributes) {
+                    if (onlyModel())
+                        return onlyModel.saveAttributes(attributes);
+                },
+
+                attributes: Attributes(), // Should be written by the wrapper :-/
+
+                attributeErrors: o({})
+            };
+
+            return Model(modelImplementation)
         }
 
 
@@ -500,17 +575,6 @@ define([
         };
 
         
-        ///// withState :: State -> Model
-        //
-        // Overlays a state on top of this model's state
-
-        self.withState = function(state) {
-            return Model( _({}).extend(args, {
-                state: c(function() { return state() === 'ready' ? self.state() : state(); })
-            }));
-        };
-
-
         ///// withAttributes :: Attributes -> Model
         //
         // Overlays the provided attributes in the observable.
@@ -518,31 +582,31 @@ define([
         // the current attributes and the overlayed attributes.
         
         self.withAttributes = function(overlayedAttributes) {
-            return Model( _({}).extend(args, {
-                attributes: c({
-                    read: function() {
-                        var underlyingAttributesNow = self.attributes();
-                        var overlayedAttributesNow = u(overlayedAttributes);
-
-                        return _({}).extend(underlyingAttributesNow, overlayedAttributesNow);
-                    },
+            var augmentedAttributes = c({
+                read: function() {
+                    var underlyingAttributesNow = self.attributes();
+                    var overlayedAttributesNow = u(overlayedAttributes);
                     
-                    write: function(updatedAttributes) { 
-                        var underlyingAttributesNow = self.attributes();
-                        var overlayedAttributesNow = overlayedAttributes();
-                        var updatedAttributesNow = u(updatedAttributes); // Attributes handles this for us, but due to the pick/omit we have to do it here too
+                    return _({}).extend(underlyingAttributesNow, overlayedAttributesNow);
+                },
+                
+                write: function(updatedAttributes) { 
+                    var underlyingAttributesNow = self.attributes();
+                    var overlayedAttributesNow = overlayedAttributes();
+                    var updatedAttributesNow = u(updatedAttributes); // Attributes handles this for us, but due to the pick/omit we have to do it here too
+                    
+                    var overlayedKeys = _(overlayedAttributesNow).keys();
+                    
+                    overlayedAttributes( _(updatedAttributesNow).pick(overlayedKeys) );
+                    
+                    // We should never again touch attributes hidden by the overlay; in order for them
+                    // not to be erased they must be set here as well.
+                    self.attributes( _({}).extend(_(underlyingAttributesNow).pick(overlayedKeys),
+                                                  _(updatedAttributesNow).omit(overlayedKeys)) );
+                }
+            });
 
-                        var overlayedKeys = _(overlayedAttributesNow).keys();
-                        
-                        overlayedAttributes( _(updatedAttributesNow).pick(overlayedKeys) );
-
-                        // We should never again touch attributes hidden by the overlay; in order for them
-                        // not to be erased they must be set here as well.
-                        self.attributes( _({}).extend(_(underlyingAttributesNow).pick(overlayedKeys),
-                                                      _(updatedAttributesNow).omit(overlayedKeys)) );
-                    }
-                })
-            }));
+            return self.withFields({ attributes: augmentedAttributes });
         };
         
 
@@ -603,28 +667,6 @@ define([
         };
 
         
-        ///// withRelationships :: (String -> Relationship) -> Model
-        //
-        // Overlays the provided relationship function to this model.
-
-        self.withRelationships = function(additionalRelationships) {
-            return Model( _({}).extend(args, {
-                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); }
-            }));
-        };
-
-        
-        ///// withName :: String -> Model
-        //
-        // Replaces the current name.
-
-        self.withName = function(name) {
-            return Model( _({}).extend(args, {
-                name: name
-            }));
-        };
-
-        
         // toString :: () -> String
         //
         // Just some sort of friendly-ish string
@@ -634,40 +676,63 @@ define([
         return self;
     };
 
+    ///// modelForBackend
+    //
+    // Builds a model for a backend with the remainder of the necessary fields
+
+    var modelForBackend = function(args) {
+        var implementation = {}
+        
+        var backend = args.backend || die('Missing required arg `backend` for ModelForBackend');
+
+        implementation.name = args.name;
+        implementation.uri = args.uri;
+        implementation.debug = args.debug || false;
+
+        implementation.fetchAttributes = backend.fetchAttributes;
+        implementation.saveAttributes = backend.saveAttributes;
+
+        implementation.state = State(args.state || 'initial');
+
+        implementation.attributes = Attributes({ attributes: args.attributes });
+
+        implementation.attributeErrors = o({});
+
+        return Model(implementation);
+    }
+
 
     ///// LocalModelBackend
     //
-    // A ModelBackend that only has the attributes passed in to its constructor,
-    // but can have `fetch` and `save` easily overridden for mocking out.
+    // A ModelBackend that only has the attributes passed in to its constructor.
 
     var LocalModelBackend = function(args) {
         if (!(this instanceof LocalModelBackend)) return new LocalModelBackend(args);
 
         var self = this;
-
-        args = args || {};
         
-        self.name = args.name || "(unknown)";
-        self.attributes = args.attributes || {};
-        self.uri = args.uri || ('fake:' + Math.random(1000).toString()); // A fake uri also so through a few .withNames, we know a link worked, etc.
-        self.debug = args.debug || false;
-        self.state = o('ready');
+        self.fetchAttributes = function(data) { return when.resolve(args.attributes); };
+        self.saveAttributes = function(model) { return when.resolve(); };
 
-        self.fetch = function(data) { return args.fetch ? args.fetch() : when.resolve(self.attributes); };
-        self.save = function(model) { return args.save ? args.save(model) : when.resolve(); };
-
-        self.attributeErrors = o(args.attributeErrors || {});
-        self.relationships = args.relationships || function(attr) { return undefined; };
-
-        self.attributes = Attributes({ attributes: args.attributes });
-
-        self.toString = function() { return 'LocalModelBackend()'; };
-        
         return self;
     };
 
-    // Convenience wrapper
-    var LocalModel = function(args) { return Model(LocalModelBackend(args)); };
+
+    ///// LocalModel
+    // 
+    // creates a Model from the args for a backend and some args for the model
+
+    var LocalModel = function(args) { 
+        args = args || {};
+        return modelForBackend({
+            uri: args.uri || ('fake:' + Math.random(1000).toString()),
+            name: args.name || "(unknown)",
+            debug: args.debug || false,
+            state: 'ready',
+            attributes: args.attributes,
+            backend: LocalModelBackend(args)
+        });
+    };
     
    
     ///// BBWriteThroughObservable
@@ -701,7 +766,7 @@ define([
         var self = {};
         
         // Begins in 'ready' state with no attributes
-        var url = c(function() { return u(args.url); });
+        self.uri = c(function() { return u(args.uri); });
         self.state = o( _(args).has('state') ? u(args.state) : 'initial' );
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
@@ -714,7 +779,7 @@ define([
         var BB = args.Backbone || Backbone;
 
         //  Set up a private Backbone.Model to handle HTTP, etc.
-        var bbModel = new (BB.Model.extend({ url: url }))();
+        var bbModel = new (BB.Model.extend({ url: self.uri }))();
         
         self.attributes = Attributes({
             attributes: args.attributes,
@@ -727,55 +792,47 @@ define([
                 });
             }
         });
+
+        var bbModelClass = BB.Model.extend({ url: self.uri });
         
         // This will be mutated to correspond to the latest response; any other response will be ignored.
         var nonce = null;
-        function newNonce() { nonce = Math.random(); return nonce; }
+        var newNonce = function() { nonce = Math.random(); return nonce; }
         
-        self.save = function() { 
-            var myNonce = newNonce();
-            self.state("saving");
-            if (self.debug) console.log(self.name, '==>', bbModel.attributes, '(', self.attributes(), ')');
+        self.saveAttributes = function(attributes) { 
+            if (self.debug) console.log(self.name, '==>', attributes);
+
+            var doneSaving = when.defer();
+
+            var bbModel = new bbModelClass(attributes);
+
             bbModel.save({}, { 
-                success: function() { 
-                    if (nonce === myNonce) {
-                        self.attributeErrors({});
-                        self.state('ready');
-                    } 
-                },
+                success: function() { doneSaving.resolve(); },
 
                 error: function(model, xhr, options) { 
-                    if (nonce === myNonce) {
-                        // Note that it is pretty much a free-for-all here, so I just assume that a 400 error comes with some dict...
-                        var err = JSON.parse(xhr.responseText);
-                        self.attributeErrors(adjustTastypieError(err));
-                        self.state('ready');
-                    }
+                    var err = JSON.parse(xhr.responseText);
+                    doneSaving.reject(adjustTastypieError(err));
                 }
             });
-            return self; // Just to be "fluent"
+
+            return doneSaving.promise;
         };
         
-        self.fetch = function() {
-            var myNonce = newNonce();
-            self.state("fetching");
-            if (self.debug) console.log(self.name, '-->', url());
+        self.fetchAttributes = function() {
+            var doneFetching = when.defer();
+
+            var bbModel = new bbModelClass();
+
             bbModel.fetch({ 
                 success: function(model, response) { 
-                    if (nonce === myNonce) {
-                        var changedAttributes = model.changedAttributes();
-                        if (self.debug) console.log(self.name, '<--', url(), changedAttributes);
-                        self.attributes(changedAttributes);
-                        self.state('ready');
-                    }
+                    doneFetching.resolve(model.attributes);
                 }
             });
-            return new Model(self); // Just to be "fluent"
+
+            return doneFetching.promise;
         };
         
-        self.toString = function() { return 'RemoteModel'; };
-
-        return new Model(self);
+        return self;
     };
 
     ///// NewModel
@@ -790,9 +847,11 @@ define([
     var NewModel = function(args) {
         var self = {};
 
-        self.name = args.name || '(unknown new model)';
+        self.name = args.name || '(anonymous NewModel)';
 
         self.create = args.create || die('Missing required arg `create` for `NewModel`');
+
+        self.relationships = args.relationships || function(attr) { return undefined; };
 
         // This state marches from initial -> saving -> ready
         var initializationState = State('initial');
@@ -809,7 +868,7 @@ define([
         // This changes one before initializationState, so the internal bits that depend on it fire before the
         // external world gets a state change (depending on attributes() before checking state() means client is out of luck!)
         var createdModel = o(null);
-        
+
         self.state = State(c(function() { return initializationState() === 'ready' ? createdModel().state() : initializationState(); }));
         
         self.attributeErrors = c(function() { return createdModel() ? createdModel().attributeErrors() : attributeErrors(); });
@@ -823,22 +882,28 @@ define([
             if (createdModel())
                 return createdModel().relatedCollection(attr);
         };
-
-        self.fetch = function() { 
-            if (createdModel())
-                return createdModel().fetch(); 
-            else
-                return self;
+        
+        self.withRelationships = function(additionalRelationships) {
+            return NewModel( _({}).extend(args, {
+                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); }
+            }));
         };
 
-        self.save = function() { 
+        self.fetchAttributes = function() { 
+            if (createdModel())
+                return createdModel().fetchAttributes(); 
+            else
+                return initialModel.fetchAttributes();
+        };
+
+        self.saveAttributes = function(attributes) { 
             if (initializationState() === 'ready') {
-                createdModel().save();
+                return createdModel().saveAttributes(attributes);
 
             } else if (initializationState() === 'initial') {
 
                 // Call the `create` function provided to the constructor
-                var createResult = self.create({
+                var doneCreating = self.create({
                     attributes: initialModel.attributes(),
                     debug: initialModel.debug,
                     name: self.name
@@ -849,14 +914,16 @@ define([
                 // If it does not return a promise, it must raise an exception
                 // to indicate the failure, so `when` will simulate a promise
                 // rejection
-                when(createResult)
+                return when(doneCreating)
                     .then(function(actuallyCreatedModel) {
                         createdModel(actuallyCreatedModel);
                         initializationState('ready');
+                        return when.resolve();
                      })
                     .otherwise(function(creationErrors) {
                         attributeErrors(creationErrors);
                         initializationState('initial');
+                        return when.reject();
                     });
             } 
             return self;
@@ -878,7 +945,6 @@ define([
     //   newModel      :: {String:*} -> Model
     // }
 
-                                                   
     ///// Collection
     //
     // A reactive/stateful collection of models by URI, with
@@ -911,18 +977,23 @@ define([
     // "fetching" --[ success ]--> "ready"
     // "saving"   --[ success ]--> "ready"
 
-    var Collection = function(args) {
-        if (!(this instanceof Collection)) return new Collection(args);
+
+    ///// Collection
+    //
+    // This is just the constructor for the fluent interface; it has no logic.
+    // Required args are all the basic methods of a collection.
+
+    var Collection = function(implementation) {
+        if (!(this instanceof Collection)) return new Collection(implementation);
 
         var self = this;
-
-        args = _({}).extend(args);
 
         ///// name :: String
         //
         // For debugging, etc
 
-        self.name = args.name;
+        self.name = implementation.name || die('Collection implementation missing required field `name`.');
+
 
         ///// uri :: String
         //
@@ -930,7 +1001,8 @@ define([
         // It is not validated, but simply used to keep track of
         // some notion of identity.
 
-        self.uri = args.uri;
+        self.uri = implementation.uri || die('Collection implementation missing required field `uri`.');
+
 
         ///// relationships :: String -> Relationship | undefined
         //
@@ -938,7 +1010,8 @@ define([
         // be a relationship defined or no. It is a function rather 
         // than a dictionary to allow more implementation strategies.
         
-        self.relationships = args.relationships;
+        self.relationships = implementation.relationships || die('Collection implementation missing required field `relationships`.');
+
 
         ///// data :: Observable {String: *}
         //
@@ -947,42 +1020,35 @@ define([
         // simply uninterpreted by the Collection class, but passed to
         // the underlying `fetch` implementation.
 
-        self.data = w(args.data || {});
+        self.data = implementation.data || die('Collection implementation missing required field `data`');
+
         
         ///// state :: State ("initial" | "fetching" | "ready")
         //
-        // If the thing passed in looks like it is already an observable
-        // state, with a `reaches` attribute, then it will be used directly,
-        // otherwise the value will be assumed to be an initial state.
+        // A state may be passed in via the args, in which case it will
+        // take precedence over the collection's state. Use with care.
+        //
+        // The state *must* be writable.
 
-        self.state = (ko.isObservable(args.state) && _(args.state).has('reaches')) ? args.state : State(args.state || "initial");
+        self.state = implementation.state || die('Collection implementation missing required field `state`');
 
+        
         ///// models :: Models
         //
         // A collection of models by URI that supports intelligent
         // bulk update and relationships.
 
-        self.models = Models({ 
-            relationships: self.relationships,
-            models: args.models
-        });
+        self.models = implementation.models || die('Collection implementation missing required field `models`');
 
-        ///// newModel :: * -> Model
+
+        ///// create :: * -> Promise Model
         //
         // Creates a new model in this collection; provided by the
         // implementation. The model will retain all added relationships
         // and subresources.
-        
-        self.newModel = function(modelArgs) { 
-            modelArgs = modelArgs || {};
-            modelArgs.attributes = modelArgs.attributes || o({});
 
-            return NewModel({
-                debug: self.debug,
-                attributes: modelArgs.attributes,
-                create: args.create || die ('Collection backend has no `create` method: ' + args)
-            }).withRelationships(self.relationships);
-        };
+        self.create = implementation.create || die('Collection implementation missing required field `create`');
+        
         
         ///// relatedCollection :: String -> Collection
         //
@@ -991,57 +1057,123 @@ define([
 
         self.relatedCollection = function(attr) { 
             var rel = self.relationships(attr) || die('No known relationship for ' + self.name + ' via attribute ' + attr);
-            return self.relationships(attr).link.resolve(self); 
+            return self.relationships(attr).link.resolve(self).withName(self.name + '.' + attr);
         };
-
-        ///// fetch :: () -> ()
+        
+       
+        ///// fetchModels :: {:String} -> Promise {URI:Model}
         //
-        // Utilizes the implementation's underlying (pure) `fetch` method
-        // to perform a mutating fetch that will set the state to "fetching"
-        // while underway and then mutate `models` appropriately.
+        // For effective combinators, `fetchModels` exposes the
+        // functional core of a collection.
+
+        self.fetchModels = implementation.fetchModels || die('Collection implementation missing required field `fetchModels`');
+
+        
+        // Derived surface functions & fluent combinators
+        // ----------------------------------------------
+
+        ///// fetch :: () -> Collection
         //
-        // Once fetched, this will re-fetch whenever the `data` changes.
+        // Calls `fetchModels` and while the promise is resolving sets
+        // state to "fetching"
+        
+        var nonce = null;
+        var newNonce = function() { nonce = Math.random(); return nonce; };
+        self.fetch = function() {
+            var data = _({}).extend(self.data());
+            var myNonce = newNonce();
+            var modelsPromise = self.fetchModels(data);
 
-        self.fetch = function() { 
-            var modelsPromise = args.fetch( _({}).extend(self.data()) ); 
+            self.state('fetching');
 
-            when(modelsPromise, 
-                 function(modelsByUri) {
-                     self.models(modelsByUri);
-                     self.state('ready');
-                 },
-                 function(err) {
-                     console.error(err);
-                     self.state('ready');
-                 });
+            when(modelsPromise)
+                .then(function(modelsByUri) {
+                    if (nonce !== myNonce) return;
+                    self.models(modelsByUri);
+                    self.state('ready');
+                })
+                .otherwise(function(err) {
+                    if (nonce !== myNonce) return;
+                    self.state('ready');
+                });
             
             return self; 
         };
         self.data.subscribe(function() { if (self.state() !== "initial") self.fetch(); });
 
-        // Fluent Combinators
-        // ------------------
+        
+        ////// newModel :: creationArgs -> Model
+        //
+        // Returns a model that will `create` upon the
+        // first save.
+
+        self.newModel = function(modelArgs) { 
+            modelArgs = modelArgs || {};
+            modelArgs.attributes = modelArgs.attributes || o({});
+
+            return NewModel({
+                debug: self.debug,
+                attributes: modelArgs.attributes,
+                create: function(createArgs) {
+                    var doneCreating = implementation.create(createArgs);
+
+                    return when(doneCreating)
+                        .then(function(createdModel) {
+                            var update = {};
+                            update[u(createdModel.uri)] = createdModel;
+                            return when.resolve(createdModel.withRelationships(self.relationships)); 
+                        });
+                }
+            }).withRelationships(self.relationships);
+        };
+        
+
+        
+        ///// with :: overrides -> Collection
+        //
+        // The "master" combinator for overwriting fields of the Collection constructor
+        
+        self.withFields = function(implementationFields) {
+            return Collection( _({}).extend(implementation, implementationFields) );
+        }
+
 
         ///// withData :: Observable {*} -> Collection
         //
-        // Returns a new collection exactly like this one but with `data` augmented with the
-        // provided data. **Note** that this extends the current data, it does not replace it.
+        // A Collection with independent Models and new data but the same backend.
         
         self.withData = function(additionalData) { 
-            return Collection(_(args).extend({
-                data: c(function() { return _({}).extend(self.data(), u(additionalData)); }),
-            }));
+            var combinedData = c(function() { return _({}).extend(self.data(), u(additionalData)); });
+
+            return self.withFields({ data: combinedData });
         };
 
+        
+        ///// withState :: State -> Collection
+        //
+        // This collection with a new notion of its state.
+
+        self.withState = function(state) {
+            return self.withFields({ state: state });
+        }
+
+        
         ///// withRelationships :: (String -> Relationship | undefined) -> Collection
         //
-        // A collection with additional relationships.
+        // This collection with additional relationships & the same models
 
         self.withRelationships = function(additionalRelationships) {
-            return Collection(_(args).extend({
-                relationships: function(attr) { return additionalRelationships(attr) || self.relationships(attr); },
-                models: self.models(),
-            }));
+            var combinedRelationships = function(attr) { return additionalRelationships(attr) || self.relationships(attr); };
+
+            return self.withFields({
+                models: c({
+                    write: function(newModels) { self.models(newModels); },
+                    read: function() {
+                        return _(self.models()).mapValues(function(model) { return model.withRelationships(combinedRelationships); });
+                    }
+                }),
+                relationships: combinedRelationships 
+            });
         };
                                  
         
@@ -1054,57 +1186,47 @@ define([
         self.withSubresourcesFrom = function(subresourceCollections) {
 
             var augmentedModels = c(function() {
-                var _models = {};
-             
-                _(self.models()).each(function(model, uri) {
-                    _models[uri] = model.withSubresourcesFrom(subresourceCollections);
-                });
-
-                return _models;
+                return _(self.models()).mapValues(function(model) { 
+                    return model.withSubresourcesFrom(subresourceCollections); 
+                })
             });
 
-            var augmentedState = c(function() {
-                var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
-                if ( m ) 
-                    return m.state();
-                else
-                    return self.state();
-            });
-            
-            return Collection(_({}).extend(args, {
-                state: augmentedState,
-
-                models: augmentedModels,
-
-                create: function(modelArgs) {
-                    var m = LocalModel(modelArgs);
-                    var augmentedM = m.withSubresourcesFrom(subresourceCollections);
-                    augmentedM.attributes(modelArgs.attributes);
-                    return args.create(_({}).extend(modelArgs, {
-                        attributes: m.attributes()
-                    }));
+            var augmentedState = c({
+                read: function() {
+                    var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
+                    if ( m ) 
+                        return m.state();
+                    else
+                        return self.state();
                 },
-            }));
+                write: function(newValue) {
+                    self.state(newValue);
+                }
+            });
+
+            var augmentedCreate = function(modelArgs) {
+                var m = LocalModel(modelArgs);
+                var augmentedM = m.withSubresourcesFrom(subresourceCollections);
+                augmentedM.attributes(modelArgs.attributes);
+                return self.create(_({}).extend(modelArgs, {
+                    attributes: m.attributes()
+                }));
+            };
+            
+            return self.withFields({
+                state: augmentedState,
+                models: augmentedModels,
+                create: augmentedCreate
+            });
         };
     
-        ///// withState :: State -> Collection
-        //
-        // This collection with a new notion of its state.
-
-        self.withState = function(state) {
-            return Collection(_({}).extend(args, {
-                state: state
-            }));
-        }
 
         ///// withName :: String -> Collection
         //
         // This collection with a new name
         
         self.withName = function(name) {
-            return Collection(_({}).extend(args, {
-                name: name
-            }));
+            return self.withFields({ name: name });
         };
 
 
@@ -1127,28 +1249,71 @@ define([
         // Adds a querystring parameter to the URL
 
         self.withParam = function(additionalParam) {
-            var newUrl = c(function() {
-                var parsedUrl = URI(u(self.url));
-                var newParam = _({}).extend( parsedUrl.query(true), u(additionalParam));
+            var newURI = c(function() {
+                var parsedURI = URI(u(self.uri));
+                var newParam = _({}).extend( parsedURI.query(true), u(additionalParam));
 
-                return parsedUrl.query(newParam).toString();
+                return parsedURI.query(newParam).toString();
             });
 
-            return Collection( _({}).extend(args, {
-                url: newUrl,
-            }));
+            return self.withFields({ uri: newURI });
         };
     };
 
-    ///// LocalCollection
+
+    ///// collectionForBackend :: {backend:CollectionBackend, ...} -> Collection
     //
-    // All in memory
+    // Converts a pure backend
 
-    var LocalCollection = function(args) {
-        return Collection(LocalCollectionBackend(args));
-    }
+    var collectionForBackend = function(args) {
+        var implementation = {};
 
-    ////// LocalCollectionBackend
+        var backend = args.backend || die('Missing required arg `backend` for CollectionForBackend');
+
+        /////  create :: data -> Promise Model
+        //
+        // Delegates creation to the backend
+
+        implementation.create = backend.create;
+
+
+        ///// fetchModels :: data -> Promise {URI:Model}
+        //
+        // Delegates fetching the backend
+
+        implementation.fetchModels = backend.fetchModels;
+
+        
+        ///// name, uri, debug, relationships
+        //
+        // Various simple parameters provided from outside
+        
+        implementation.uri = args.uri;
+        implementation.name = args.name;
+        implementation.debug = args.debug;
+        implementation.relationships = args.relationships;
+        implementation.data = w(args.data);
+        
+        ///// State
+        //
+        // Starts "initial"
+
+        implementation.state = State(args.state || 'initial');
+        
+        ///// Models
+        //
+        // Models are entirely pedestrian
+
+        implementation.models = Models({ 
+            models: _.chain(u(args.models)).map(function(model, key) { return [key, model.withName(implementation.name+'['+key+']')]; }).object().value()
+        });
+
+
+        return Collection(implementation);
+    };
+    
+    
+    ////// LocalCollectionBackend <: CollectionBackend
     //
     // A stateless collection backend that always returns the models provided
     // upon construction.
@@ -1160,38 +1325,33 @@ define([
 
         args = args || {};
 
-        self.uri = args.uri || ('fake:' + Math.random(1000).toString()); // A fake uri also so through a few .withNames, we know a link worked, etc.
-        self.name = args.name || 'LocalCollection({uri: '+self.uri+')';
-        self.debug = args.debug || false;
-        self.relationships = args.relationships || function(attr) { return undefined; };
+        self.fetchModels = function(data) { return when.resolve(args.models); };
+        self.create = function(modelArgs) { return when.resolve(LocalModel(modelArgs)); }
 
-        self.state = o('ready');
-
-        self.models = Models({ 
-            relationships: self.relationships,
-            models: _.chain(u(args.models)).map(function(model, key) { return [key, model.withName(self.name+'['+key+']')]; }).object().value()
-        });
-
-        ///// fetch :: () -> Promise {URI:Model}
-        //
-        // Always immediately resolves with the models provided by the constructor.
-        // (Note that in order to mutate the models, self.models() can be mutated)
-
-        self.fetch = args.fetch || function() { return when.resolve(self.models()); };
-
-        
-        ///// create :: args -> Promise Model
-        //
-        // Always immediately returns a LocalModel with the 
-        // given args. The args are really just debug, name, attributes.
-
-        self.create = function(modelArgs) {
-            return when.resolve(LocalModel(modelArgs));
-        }
-        
         return self;
     };
+
     
+    ///// LocalCollection
+    //
+    // All in memory, built from its backend.
+
+    var LocalCollection = function(args) {
+        args = args || {};
+        var uri = args.uri || ('fake:' + Math.random(1000).toString());
+        var name = args.name || 'LocalCollection({uri:'+uri+'})';
+
+        return collectionForBackend({
+            uri: uri,
+            name: name,
+            data: args.data || {},
+            state: 'ready',
+            relationships: args.relationships || function(attr) { return undefined; },
+            models: args.models,
+            backend: LocalCollectionBackend(args)
+        });
+    };
+
 
     ///// RemoteCollection
     //
@@ -1199,7 +1359,15 @@ define([
     // and which saves & creates new models via PUT and POST.
 
     var RemoteCollection = function(args) {
-        return Collection(RemoteCollectionBackend(args));
+        return collectionForBackend({
+            name: args.name,
+            uri: args.uri,
+            data: args.data,
+            state: 'initial',
+            relationships: args.relationships || function(attr) { return undefined; },
+            models: args.models,
+            backend: RemoteCollectionBackend(args)
+        });
     }
 
     ///// RemoteCollectionBackend
@@ -1209,18 +1377,16 @@ define([
     var RemoteCollectionBackend = function(args) {
         var self = {};
         
-        self.url = w(args.url);
+        self.uri = args.uri;
         self.name = args.name || "(unknown)";
         self.debug = args.debug || false;
-        self.relationships = args.relationships || function(thisColl, attr) { return undefined; };
+        self.relationships = args.relationships || function(thisColl, attr) { return undefined; }; // TODO: backend should not have relationships
 
-        self.state = ko.observable("initial");
-        self.models = Models(args.models || {});
         var BB = args.Backbone || Backbone; // For swapping out network library if desired, and for testing
 
         // A private `Backbone.Collection` for dealing with HTTP/jQuery
         var BBCollectionClass = BB.Collection.extend({ 
-            url: self.url,
+            url: self.uri,
             parse: function(response) { return response.objects; }
         });
 
@@ -1228,11 +1394,10 @@ define([
         var modelInThisCollection = function(args) {
             return RemoteModel({ 
                 debug: self.debug,
-                url: args.uri, 
+                uri: args.uri, 
                 name: self.name + '[' + args.uri + ']',
                 state: 'ready',
                 attributes: args.attributes,
-                relationships: self.relationships,
                 Backbone: BB
             });
         };
@@ -1256,14 +1421,13 @@ define([
             var bbModel = bbCollection.create(payload, {
                 wait: true,
                 success: function(newModel, response, options) { 
-                    // No nonce needed because the collection's state does not change
+                    if (self.debug) console.log(self.name, '<==', newModel);
 
                     var createdModel = modelInThisCollection({ 
                         uri: newModel.get('resource_uri'), // Requires tastypie always_return_data = True; could/should fallback on Location header
                         attributes: newModel.attributes 
                     });
 
-                    updateModels([newModel], { extend: true });
                     doneCreating.resolve(createdModel);
                 },
                 error: function(model, xhr, options) {
@@ -1276,20 +1440,20 @@ define([
         }
 
         
-        ///// fetch :: {String: *} -> Promise {URI:Model}
+        ///// fetchModels :: {String: *} -> Promise {URI:Model}
         //
         // A promise that resolves with the models that correspond to the
         // provided data.
     
-        self.fetch = function(data) {
-            if (self.debug) console.log(self.name, '-->', self.url(), '?', u(data)); //URI().query(self.data()).query());
+        self.fetchModels = function(data) {
+            if (self.debug) console.log(self.name, '-->', u(self.uri), '?', u(data)); //URI().query(self.data()).query());
             
             // The special value NOFETCH is used to indicate with certainty that the result
             // of the fetch will be empty, so we should elide hitting the network. This occurs
             // somewhat often during automatic dependency propagation and is no problem.
 
             if (_(data).any(function(v) { return v === NOFETCH; })) {
-                if (self.debug) console.log(self.name, '<--', self.url(), '(not bothering)');
+                if (self.debug) console.log(self.name, '<--', u(self.uri), '(not bothering)');
                 return when.resolve({});// Equivalent to having fetched instantaneously and gotten no results
             }
             
@@ -1630,6 +1794,7 @@ define([
     //
     // *        --[ fetch   ]--> fetching
     // fetching --[ success ]--> ready
+
     var Api = function(impl) {
         var self = _(this).extend(impl);
 
@@ -1674,7 +1839,7 @@ define([
     var RemoteApi = function(args) {
         var self = {};
 
-        self.url = w(args.url);
+        self.uri = args.uri || die('Missing required argument `uri` for RemoteApi');
         self.state = o("initial");
         self.debug = args.debug || false;
         self.collections = Collections({ debug: self.debug, relationships: args.relationships });
@@ -1682,7 +1847,7 @@ define([
 
         // The actual API metadata endpoint (a la Tastypie) is implemented as a Backbone model
         // where each attribute is a resource endpoint
-        var bbModel = new (Backbone.Model.extend({ url: self.url }))();
+        var bbModel = new (Backbone.Model.extend({ url: self.uri }))();
 
         var updateCollections = function(attributes) {
             if (!attributes) return; // changedAttributes returns false, not {}, when nothing has changed
@@ -1692,7 +1857,7 @@ define([
                 additionalCollections[name] = RemoteCollection({ 
                     name: name,
                     debug: self.debug,
-                    url: metadata.list_endpoint,
+                    uri: metadata.list_endpoint,
                     schema_url: metadata.schema,
                 });
             });
@@ -1705,12 +1870,12 @@ define([
 
         self.fetch = function() {
             self.state("fetching");
-            if (self.debug) console.log(self.name, '-->', u(self.url));
+            if (self.debug) console.log(self.name, '-->', u(self.uri));
             var myNonce = newNonce();
             bbModel.fetch({
                 success: function(model, response) { 
                     if (nonce === myNonce) {
-                        if (self.debug) console.log(self.name, '<--', u(self.url));
+                        if (self.debug) console.log(self.name, '<--', u(self.uri));
                         updateCollections(model.changedAttributes());
                         self.state('ready'); 
                     } 

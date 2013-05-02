@@ -1,14 +1,14 @@
 {
     "name": "solidstate",
     "version": "0.4.0",
-    "description": "A high-level, fluent, state-machine-based, automatic dependency-driven REST client library for Javascript.",
+    "description": "A high-level & highly automatic REST client for Javascript with a dramatically simple & fluent API.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
     "homepage": "https://github.com/kennknowles/solidstate.js",
     "keywords": [
         "REST",
         "Backbone",
-        "State-machine",
+        "State machine",
         "Knockout"
     ],
     "issues": {

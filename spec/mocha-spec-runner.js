@@ -10,6 +10,11 @@ requirejs.config({
     }
 });
 
+// Load the module, which disables contracts, then turn them on during testing
+requirejs('solidstate');
+var contracts = require('contracts-js');
+contracts.enabled(true);
+
 /* 
    Only the use of `requirejs :: String -> Module` is synchronous, 
    which is necessary for mocha to work properly.
@@ -17,3 +22,4 @@ requirejs.config({
    Do not attempt to use `requirejs :: [String] -> ([Module] -> Module) -> ()`
 */
 requirejs('spec/spec');
+

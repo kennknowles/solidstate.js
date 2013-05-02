@@ -1,5 +1,6 @@
 /* global describe, it */
 /* jshint -W070 */
+/* jshint -W030 */
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([
     'underscore',
@@ -20,48 +21,38 @@ define([
     assert = chai.assert;
 
     describe("Collection", function() {
-        it("Can be constructed with a basic obsevable state that will be used", function() {
-            var state = o('ready');
-            var c = ss.Collection({ state: state });
+        it("When the implementation is fetching, has state fetching", function(done) {
+            var deferred = when.defer();
+            var fetchModels = function(data) { return deferred.promise; };
+            var c = ss.LocalCollection().withFields({ fetchModels: fetchModels });
 
             expect(c.state()).to.equal('ready');
-            state('fetching');
-            expect(c.state()).to.equal('fetching');
+            c.fetch();
+            when(c.state.reaches('ready')).then(done);
+            deferred.resolve({});
         });
         
-        it("Can be constructed with a State object for a state", function() {
-        // Yes a state
-            var state = ss.State('ready');
-            var c = ss.Collection({ state: state });
+        it("Can have its state augmented replaced by .withState", function() {
+            var c = ss.LocalCollection();
             expect(c.state()).to.equal('ready');
-            state('fetching');
-            expect(c.state()).to.equal('fetching');
-        });
-
-        it("Can have its state replaced by .withState", function() {
-            var c = ss.Collection();
-            expect(c.state()).to.equal('initial');
             
-            var state2 = ss.State('ready');
+            var state2 = ss.State('initial');
             var c2 = c.withState(state2);
-            expect(c2.state()).to.equal('ready');
+            expect(c2.state()).to.equal('initial');
             state2('fetching');
             expect(c2.state()).to.equal('fetching');
         });
 
         it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from theirs", function() {
-
-            var impl = {
-                state: ko.observable("ready"),
-                models: ko.observable({
-                    'one': new ss.Model({ state: o("ready"), attributes: o({ foo: o("baz")}) }),
-                    'two': new ss.Model({ state: o("ready"), attributes: o({ foo: o("biz")}) })
-                })
-            };
-
+            var c = ss.LocalCollection({
+                models: {
+                    'one': ss.LocalModel({ attributes: { foo: "baz"} }),
+                    'two': ss.LocalModel({ attributes: { foo: "biz"} })
+                }
+            });
+            expect(c.state()).to.equal("ready");
+            
             var incomplete_models = o({baz: 25});
-
-            var c = new ss.Collection(impl);
             var c2 = c.withSubresourcesFrom({ foo: { models: o({ baz: 24, biz: 89 }) } });
             var c3 = c.withSubresourcesFrom({ foo: { models: incomplete_models } });
 
@@ -88,9 +79,8 @@ define([
         });
         
         it("Creates new models with .newModel that appropriately proxy subresources", function() {
-            var backend = ss.LocalCollectionBackend();
-            var createSpy = sinon.spy(backend, 'create');
-            var c = ss.Collection(backend);
+            var c = ss.LocalCollection();
+            var createSpy = sinon.spy(c, 'create');
 
             var referenced = ss.LocalModel({ attributes: { resource_uri: 'zizzle' } });
 
@@ -115,6 +105,7 @@ define([
                 }
             });
 
+            expect(c.models()['/fake/uri/1'].attributes().bizzle()).to.equal('bozzle'); // sanity check
             expect(c.models()['/fake/uri/1'].relationships('foo')).to.equal(undefined);
             
             var c2 = ss.LocalCollection();
@@ -124,6 +115,8 @@ define([
                 };
             });
 
+            expect(c3.relationships('bizzle')).to.be.ok;
+            expect(c3.models()['/fake/uri/1'].attributes().bizzle()).to.equal('bozzle'); // sanity check
             expect(c3.models()['/fake/uri/1'].relationships('foo').link.resolve(c).uri).to.equal(c2.uri);
         });
     });

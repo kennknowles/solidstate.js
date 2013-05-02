@@ -23,11 +23,10 @@ define([
 
             var c = ss.LocalCollection({
                 name: 'fooey',
-                relationships: function(attr) { return { link: ss.LinkToCollection(dst) }; },
                 models: {
                     0: ss.LocalModel()
                 }
-            });
+            }).withRelationships(function(attr) { return { link: ss.LinkToCollection(dst) }; });
 
             expect(c.name).to.equal('fooey');
             expect(c.relatedCollection('foo').uri).to.equal(dst.uri);

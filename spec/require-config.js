@@ -9,7 +9,7 @@ requirejs.config({
         { "name": "boo",          "main": "boo.js",                   "location": "vendor/boo-1.2.4/lib"                      },
         { "name": "chai",         "main": "chai.js",                  "location": "../node_modules/chai"                      },
         { "name": "claire",       "main": "index.js",                 "location": "vendor/claire-0.3.2"                       },
-        //{ "name": "contracts-js", "main": "contracts.js",             "location": "../node_modules/contracts-js/lib"          },
+        { "name": "contracts-js", "main": "contracts.js",             "location": "../node_modules/contracts-js/lib"          },
         { "name": "flaw",         "main": "index.js",                 "location": "vendor/flaw-0.1.0"                         },
         { "name": "knockout",     "main": "knockout-latest.debug.js", "location": "../node_modules/knockout/build/output"     },
         { "name": "mocha",        "main": "mocha.js",                 "location": "../node_modules/mocha"                     },
@@ -27,6 +27,9 @@ requirejs.config({
         },
         "boo": {
             exports: "boo"
+        },
+        "contracts-js": {
+            exports: ""
         },
         "mocha": { 
             exports: "mocha" 
