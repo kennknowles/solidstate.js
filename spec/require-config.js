@@ -2,7 +2,8 @@ requirejs.config({
     // The RequireJS docs advise against configuring paths to node_modules for use *in node*
     // but I do it for use *in the browser*, because it is just the test suite
     paths: {
-        "solidstate"          : "../src/solidstate"
+        "solidstate"          : "../src/solidstate",
+        "jquery"              : "vendor/jquery-1.8.2"
     },
     packages: [
         { "name": "backbone",     "main": "backbone.js",              "location": "../node_modules/backbone"                  },
@@ -24,13 +25,16 @@ requirejs.config({
     shim: {
         "backbone": { 
             exports: "Backbone",
-            deps: ["underscore"]
+            deps: ["underscore", "jquery"]
         },
         "boo": {
             exports: "boo"
         },
         "contracts-js": {
             exports: ""
+        },
+        "jquery": {
+            exports: "$"
         },
         "mocha": { 
             exports: "mocha" 

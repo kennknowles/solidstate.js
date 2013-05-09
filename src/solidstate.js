@@ -156,7 +156,7 @@ define([
                 
                 _(additionalCollections).each(function(collection, name) {
                     if ( !_(nextCollections).has(name) ) {
-                        if (debug) console.debug(' - ', name);
+                        if (debug) console.log(' - ', name);
                         nextCollections[name] = collection;
                     }
                     collectionsDidChange = true;
@@ -352,8 +352,7 @@ define([
                 models: c(function() { return [self]; })
             });
 
-            var dst = self.relationships[attr].link.resolve(justThisModelCollection);
-            return dst;
+            return self.relationships[attr].link.resolve(justThisModelCollection);
         };
 
         
@@ -1128,10 +1127,10 @@ define([
 
         self.fetch = function(options) {
             var combinedData = _({}).extend(self.data());
-            console.debug((options && options.name) || self.name, '++>', combinedData);
+            console.log((options && options.name) || self.name, '++>', combinedData);
 
             if ( _.chain(combinedData).values().any(function(v) { return v === NOFETCH; }).value() ) {
-                console.debug((options && options.name) || self.name, '<++ (no fetch)');
+                console.log((options && options.name) || self.name, '<++ (no fetch)');
                 return;
             }
 
@@ -1143,10 +1142,11 @@ define([
             when(doneFetching)
                 .then(function(newZCollection) {
                     if (nonce !== myNonce) return;
-                    console.debug((options && options.name) || self.name, '<++ (', _(zoetrope.models).size(), 'results)');
+                    console.log((options && options.name) || self.name, '<++ (', _(zoetrope.models).size(), 'results)');
                     zoetrope = newZCollection;
                     updateModels(newZCollection.models);
                     mutableState('ready');
+                    console.log('Poops');
                     initial = false;
                 })
                 .otherwise(function(err) {
@@ -1157,7 +1157,9 @@ define([
             
             return Collection(self);
         };
+        console.log('Subscribing to', self.data);
         self.data.subscribe(function() { 
+            console.log('newdata', initial);
             if (!initial) self.fetch(); 
         });
 
@@ -1237,7 +1239,9 @@ define([
     // and which saves & creates new models via PUT and POST.
 
     var RemoteCollection = function(args) {
-        return CollectoinForZoetrope({
+        args = args || {};
+
+        return CollectionForZoetrope({
             name: args.name,
             uri: args.uri,
             data: args.data,
@@ -1249,7 +1253,8 @@ define([
                 uri: args.uri,
                 data: args.data,
                 name: args.name,
-                debug: args.debug
+                debug: args.debug,
+                Backbone: args.Backbone
             })
         });
     }
@@ -1553,15 +1558,12 @@ define([
     var Api = function(implementation) {
         if (!(this instanceof Api)) return new Api(implementation);
 
-        var self = this;
+        var self = _(this).extend(implementation);
 
-        self.uri = implementation.uri || die('Api implementation missing required field `uri`');
-        self.fetch = implementation.fetch || die('Api implementation missing required field `fetch`');
-        self.collections = implementation.collections || die('Api implementation missing required field `collections');
-        self.state = implementation.state || die('Api implementation missing required field `state`');
-
-        // really just for debuging
-        self.relationships = implementation.relationships;
+        self.uri || die('Api implementation missing required field `uri`');
+        self.fetch || die('Api implementation missing required field `fetch`');
+        _(self.collections).isObject() || die('Api implementation missing required field `collections');
+        self.state || die('Api implementation missing required field `state`');
 
         // Combinators
         // -----------
@@ -1723,7 +1725,11 @@ define([
         return ApiForZoetrope({
             state: 'ready',
             collections: args.collections,
-            zoetrope: z.LocalApi(args)
+            zoetrope: z.LocalApi({
+                uri: args.uri,
+                name: args.name,
+                debug: args.debug
+            })
         });
     };
 

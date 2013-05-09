@@ -43,6 +43,12 @@ define([
             expect(c2.state()).to.equal('fetching');
         });
 
+        it(".withData refetches whenever the data changes", function() {
+            var data = o({ foo: 1 });
+            var fetch = sinon.spy();
+            var c = ss.LocalCollection({ fetch: fetch }).withData(data);
+        });
+
         it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from theirs", function() {
             var c = ss.LocalCollection({
                 models: {
