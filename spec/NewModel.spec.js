@@ -55,7 +55,7 @@ define([
 
     describe("NewModel <: Model", function() {
         it("Passes the current values from the LocalModel to the `create` function", function() {
-            var backend = ss.LocalCollectionBackend()
+            var backend = ss.LocalCollection()
             var create = sinon.spy(backend, 'create');
 
             var m = ss.NewModel({
@@ -74,7 +74,7 @@ define([
             expect(u(args.attributes.foo)).to.equal('bizzle');
         });
 
-        it("When errors occur, stores them in attributeErrors() and returns to the initial state", function(done) {
+        it("When errors occur, stores them in errors() and returns to the initial state", function(done) {
             var create = sinon.spy(function(args) {
                 var deferred = when.defer()
                 deferred.reject({'__all__': 'Die'});
@@ -100,8 +100,11 @@ define([
 
             when(m.state.reaches('initial'))
                 .then(function() {
-                    expect(m.attributeErrors()).to.deep.equal({'__all__': 'Die'});
+                    expect(m.errors()).to.deep.equal({'__all__': 'Die'});
                     done();
+                })
+                .otherwise(function(exception) {
+                    console.error(exception.stack);
                 });
         });
 
@@ -168,7 +171,8 @@ define([
             m.save();
             expect(m.attributes().foo()).to.equal('baz');
             expect(m.state()).to.equal('saving');
-            savingDeferred.resolve();
+
+            savingDeferred.resolve(ss.LocalModel({ attributes: m.attributes }));
             
             when(m.state.reaches('ready'))
                 .then(function() {

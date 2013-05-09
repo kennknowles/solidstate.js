@@ -18,16 +18,17 @@ define([
     expect = chai.expect,
     assert = chai.assert;
 
-    describe("Model", function() {
+    describe("Model (fluent interface)", function() {
         it("Directly wraps the implementation", function() {
             var impl = {
                 state: ss.State('fetching'),
                 name: 'foo',
                 uri: 'zoo',
                 attributes: ss.Attributes({}),
-                attributeErrors: o({}),
-                fetchAttributes: function() { },
-                saveAttributes: function() { }
+                relationships: {},
+                errors: o({}),
+                fetch: function() { },
+                save: function() { }
             };
             var m = ss.Model(impl);
 
@@ -42,9 +43,10 @@ define([
                 name: 'foo',
                 uri: 'zoo',
                 attributes: ss.Attributes({ attributes: { foo: o('baz') } }),
-                attributeErrors: o({}),
-                fetchAttributes: function() { },
-                saveAttributes: function() { }
+                relationships: {},
+                errors: o({}),
+                fetch: function() { },
+                save: function() { }
             };
             var m = ss.Model(impl);
 
@@ -54,9 +56,10 @@ define([
                 state: ss.State('ready'), 
                 name: 'foo',
                 uri: 'zoo',
-                attributeErrors: o({}),
-                fetchAttributes: function() { },
-                saveAttributes: function() { },
+                relationships: {},
+                errors: o({}),
+                fetch: function() { },
+                save: function() { },
                 attributes: ss.Attributes({
                     attributes: { 
                         foo: 'baz',
@@ -79,8 +82,8 @@ define([
                 uri: 'bizzle',
                 state: ss.State('ready'), 
                 attributes: ss.Attributes({ attributes: {"foo": o(1), "baz": o(8)} }),
-                fetchAttributes: function() { },
-                saveAttributes: function() { }
+                fetch: function() { },
+                save: function() { }
             });
             var overlayed = ss.Attributes({ attributes: {"foo": o(4)} });
             var overlayed2 = ss.Attributes({ attributes: {"bizzz": o(5)} });

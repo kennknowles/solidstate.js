@@ -18,7 +18,8 @@ requirejs.config({
         { "name": "mocha",        "main": "mocha.js",                 "location": "../node_modules/mocha"                     },
         { "name": "underscore",   "main": "underscore.js",            "location": "../node_modules/underscore"                },
         { "name": "URIjs",        "main": "URI.js",                   "location": "../node_modules/URIjs/src"                 },
-        { "name": "when",         "main": "when.js",                  "location": "../node_modules/when"                      }
+        { "name": "when",         "main": "when.js",                  "location": "../node_modules/when"                      },
+        { "name": "zoetropic",    "main": "zoetropic.js",             "location": "../node_modules/zoetropic/src"             }
     ],
     shim: {
         "backbone": { 

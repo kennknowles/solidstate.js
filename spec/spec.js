@@ -4,8 +4,8 @@ define([
     // Keep alphabetical for easy cross-checking with directory listing
     './Api.spec',
     './Attributes.spec',
-    './BBWriteThroughObservable.spec',
     './Collection.spec',
+    './CollectionForZoetrope.spec',
     './Collections.spec',
     './FilterLink.spec',
     './LocalApi.spec',
@@ -15,7 +15,7 @@ define([
     './Models.spec',
     './NewModel.spec',
     './RemoteModel.spec',
-    './RemoteCollectionBackend.spec',
+    './RemoteCollection.spec',
     './ToManyReference.spec',
     './ToOneReference.spec',
     './UrlLink.spec',

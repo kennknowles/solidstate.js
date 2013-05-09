@@ -23,14 +23,15 @@ define([
                 collections: {
                     'foo': ss.LocalCollection(),
                     'baz': ss.LocalCollection()
-                },
-                relationships: {
-                    foo: { bizzle: { collection: 'baz' } },
-                    baz: { bozzle: { collection: 'foo' } }
                 }
+            })
+
+            var api2 = api.overlayRelationships({
+                foo: { bizzle: { collection: 'baz' } },
+                baz: { bozzle: { collection: 'foo' } }
             });
 
-            expect(api.collections().foo.relatedCollection('bizzle').uri).to.equal(api.collections().baz.uri);
+            expect(api2.collections().foo.relatedCollection('bizzle').uri).to.equal(api2.collections().baz.uri);
         });
     });
 });

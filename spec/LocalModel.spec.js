@@ -30,13 +30,13 @@ define([
             expect(m.attributes().baz()).to.equal("goodbye");
         });
 
-        it("Is always `ready`", function() {
+        it("LocalModel.fetch actually does things that look like a fetch", function(done) {
             var m = ss.LocalModel({ attributes: { foo: 'baz' } });
             expect(m.state()).to.equal('ready');
             m.fetch();
-            expect(m.state()).to.equal('ready');
-            m.save();
-            expect(m.state()).to.equal('ready');
+            m.state.reaches('ready').then(function() {
+                done();
+            });
         });
     });
 });

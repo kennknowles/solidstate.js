@@ -38,31 +38,6 @@ define([
             expect(collections().foo.uri).to.equal(c.uri);
             expect(collections().baz.uri).to.equal(c2.uri);
         });
-
-        it('Provides a link to a named collection', function() {
-            var c1 = ss.LocalCollection();
-            var c2 = ss.LocalCollection();
-            var colls = ss.Collections({
-                collections: { 'foo': c1, 'baz': c2 }
-            });
-
-            expect(colls.linkToNamedCollection('baz').resolve(c1).uri).to.equal(c2.uri);
-        });
-
-        it('Manages relationships provided in a by-name dictionary', function() {
-            var c1 = ss.LocalCollection();
-            var c2 = ss.LocalCollection();
-            var colls = ss.Collections({
-                relationships: {
-                    'foo': { 'bizzle': { collection: 'baz' } }
-                },
-                collections: { 'foo': c1, 'baz': c2 }
-            });
-
-            expect(colls.relationships.foo.bizzle.link.resolve(c1).uri).to.equal(c2.uri);
-            
-            expect(colls().foo.relatedCollection('bizzle').uri).to.equal(c2.uri);
-        });
     });
 });
 
