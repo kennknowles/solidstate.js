@@ -23,6 +23,7 @@ npm-debug.log
 
 # Coverage & test output
 /html-report
+/lcov*
 
 # Emails
 *~

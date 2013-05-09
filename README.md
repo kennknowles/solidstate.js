@@ -4,7 +4,9 @@ SolidState.js
 https://github.com/kennknowles/solidstate.js
 
 [![Build status](https://travis-ci.org/kennknowles/solidstate.js.png)](https://travis-ci.org/kennknowles/solidstate.js)
+[![Test coverage](https://coveralls.io/repos/kennknowles/solidstate.js/badge.png?branch=master)](https://coveralls.io/r/kennknowles/solidstate.js)
 [![NPM version](https://badge.fury.io/js/solidstate.png)](http://badge.fury.io/js/solidstate)
+[![Dependencies badge](https://gemnasium.com/kennknowles/solidstate.js.png)](https://gemnasium.com/kennknowles/solidstate.js)
 
 A high-level & highly automatic REST client for Javascript with a dramatically simple & fluent API.
 

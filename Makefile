@@ -32,7 +32,7 @@ test: jshint
 
 .PHONY: coverage
 coverage: jshint lib-cov
-	SOLIDSTATE_PATH=lib-cov/solidstate $(MOCHA) --reporter mocha-istanbul ./spec/mocha-spec-runner.js
+	ISTANBUL_REPORTERS=text-summary,html,lcov SOLIDSTATE_PATH=lib-cov/solidstate $(MOCHA) --reporter mocha-istanbul ./spec/mocha-spec-runner.js
 
 #
 # Actual file targets
