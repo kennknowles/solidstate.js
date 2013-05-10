@@ -985,11 +985,14 @@ define([
                 }));
             };
             
-            return Collection( _({}).extend(implementation, {
+            var newSelf = Collection( _({}).extend(implementation, {
                 state: augmentedState,
                 models: augmentedModels,
-                create: augmentedCreate
+                create: augmentedCreate,
+                fetch: function() { self.fetch(); return newSelf; }
             }));
+
+            return newSelf;
         };
         self.withSubresourcesFrom = self.overlayRelated;
 
