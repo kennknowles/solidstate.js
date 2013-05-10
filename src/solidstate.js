@@ -915,8 +915,8 @@ define([
 
                 fetch: function() { self.fetch(); return newSelf; },
 
-                create: function(args) {
-                    return self.create(args).then(function(createdModel) {
+                create: function(createArgs) {
+                    return self.create(createArgs).then(function(createdModel) {
                         return when.resolve(createdModel.withRelationships(combinedRelationships));
                     });
                 },
@@ -1090,7 +1090,7 @@ define([
         // for a saved model with the same attributes
 
         self.create = function(args) {
-
+            
             var doneCreating = zoetrope.create({
                 debug: args.debug,
                 attributes: _(args.attributes).mapValues(u),
