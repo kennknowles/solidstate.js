@@ -349,10 +349,11 @@ define([
                 create: function(creationArgs) { },
                 fetch: function(data) { },
                 relationships: self.relationships,
+                withFields: function(newFields) { },
                 models: c(function() { return [self]; })
             });
 
-            return self.relationships[attr].link.resolve(justThisModelCollection);
+            return justThisModelCollection.relatedCollection(attr);
         };
 
         
@@ -385,14 +386,14 @@ define([
                     return 'error';
                 }).extend({throttle: 1})),
 
-                fetch: function() {
+                fetch: function(options) {
                     // If the collection has not been fetched, then
                     // we can fetch it and return the attributes of
                     // the model when ready
                     if (onlyModel()) {
-                        onlyModel().fetch();
+                        onlyModel().fetch(options);
                     } else {
-                        coll.fetch();
+                        coll.fetch(options);
                     }
 
                     return Model(modelImplementation);
@@ -465,13 +466,13 @@ define([
         };
         
 
-        ///// withSubresourcesFrom :: {String: Collection} -> Model
+        ///// overlayRelated :: {String: Collection} -> Model
         //
         // A model where the given attributes have their values
         // overlayed from the corresponding collections according
         // to the relationships.
 
-        self.withSubresourcesFrom = function(subresourceCollections) {
+        self.overlayRelated = function(subresourceCollections) {
             var overlayedAttributeDict = {};
 
             var overlayedAttributes = Attributes({
@@ -520,7 +521,7 @@ define([
 
             return augmentedSelf.withFields({ state: augmentedState });
         };
-
+        self.withSubresourcesFrom = self.overlayRelated;
         
         // toString :: () -> String
         //
@@ -596,9 +597,9 @@ define([
         // sets the state to 'fetching', after which it will be restored to 'ready' 
         // unless another request intervenes.
 
-        self.fetch = function() { 
+        self.fetch = function(options) { 
             var myNonce = newNonce();
-            var doneFetching = zoetrope.fetch({ name: self.name });
+            var doneFetching = zoetrope.fetch({ name: (options && options.name) || self.name });
 
             mutableState('fetching');
             
@@ -719,12 +720,12 @@ define([
             write: function(attrs) { return createdModel() ? createdModel().attributes(attrs) : initialModel.attributes(attrs); }
         });
         
-        self.fetch = function() { 
+        self.fetch = function(options) { 
             if (createdModel()) {
-                createdModel().fetch(); 
+                createdModel().fetch(options); 
                 return Model(self);
             } else {
-                initialModel.fetch();
+                initialModel.fetch(options);
                 return Model(self);
             }
         };
@@ -774,17 +775,6 @@ define([
         });
     };
 
-    ///// CollectionBackend
-    //
-    // I know it seems silly, but there *is* an interface for just the
-    // methods that make up a collection, minus the fluent interface and
-    // state.
-    //
-    // {
-    //   fetch         :: data -> Promise {URI:Model}
-    //   newModel      :: {String:*} -> Model
-    // }
-
     ///// Collection (fluent interface)
     //
     // An interface wrapper that does some basic "kick typing" and then
@@ -799,42 +789,21 @@ define([
     var Collection = function(implementation) {
         if (!(this instanceof Collection)) return new Collection(implementation);
 
-        var self = _(this).extend(implementation);
-
-        ///// name :: String
-        //
-        // For debugging, etc
-
-        self.name = self.name || '(anonymous solidstate.Collection)';
-
-
+        var self = this;
+        
         ///// uri :: String
         //
         // A URI for this collection that can be a URL or other.
         // It is not validated, but simply used to keep track of
         // some notion of identity.
 
-        self.uri || die('Collection implementation missing required field `uri`.');
+        self.uri = implementation.uri || die('Collection implementation missing required field `uri`.');
 
-
-        ///// relationships :: {String: Relationship}
+        ///// name :: String
         //
-        // For each attribute of the models in the collection, there may 
-        // be a relationship defined or no. It is a function rather 
-        // than a dictionary to allow more implementation strategies.
-        
-        _(self.relationships).isObject() || die('Collection implementation missing required field `relationships`.');
+        // For debugging, etc
 
-
-        ///// state :: State ("initial" | "fetching" | "ready")
-        //
-        // A state may be passed in via the args, in which case it will
-        // take precedence over the collection's state. Use with care.
-        //
-        // The state *must* be writable.
-
-        self.state || die('Collection implementation missing required field `state`');
-
+        self.name = implementation.name || '(anonymous solidstate.Collection)';
         
         ///// models :: Models
         //
@@ -843,6 +812,14 @@ define([
 
         self.models = _(implementation.models).isObject() ? implementation.models : die('Collection implementation missing required field `models`');
 
+        ///// state :: State ("initial" | "fetching" | "ready")
+        //
+        // A state may be passed in via the args, in which case it will
+        // take precedence over the collection's state. Use with care.
+        //
+        // The state *must* be writable. Why?
+
+        self.state = implementation.state || die('Collection implementation missing required field `state`');
 
         ///// create :: * -> Promise Model
         //
@@ -852,17 +829,32 @@ define([
 
         self.create = implementation.create || die('Collection implementation missing required field `create`');
         
-        
         ///// fetch :: () -> Collection
         //
         // Fetches the models from the server
 
         self.fetch = implementation.fetch || die('Collection implementation missing required field `fetch`');
-
         
-        // Combinators
-        // -----------
+        ///// withFields :: overrides -> Collection
+        //
+        // The "master" combinator for overwriting fields of the Collection constructor.
+        // This must be implemented by the implementation, and cannot be created here,
+        // as it is how a _new_ and independent copy of this collection
+        // with different parameters is created.
+        
+        self.withFields = implementation.withFields || die('Collection implementation missing required field `withFields`');
+        self.withData = function(data) { return self.withFields({ data: data }); }; // deprecated alias
 
+        // Overlayed Fields and Combinators
+        // ================================
+
+        ///// relationships :: {String: Relationship}
+        //
+        // For each attribute of the models in the collection, there may 
+        // be a relationship defined or no. It is a function rather 
+        // than a dictionary to allow more implementation strategies.
+        
+        self.relationships = implementation.relationships || {};
         
         ///// relatedCollection :: String -> Collection
         //
@@ -871,10 +863,9 @@ define([
 
         self.relatedCollection = function(attr) { 
             var rel = self.relationships[attr] || die('No known relationship for ' + self.name + ' via attribute ' + attr);
-            var coll = rel.link.resolve(self).withName(self.name + '.' + attr);
+            var coll = rel.link.resolve(self).withFields({ name: self.name + '.' + attr });
             return coll;
         };
-       
         
         ////// newModel :: creationArgs -> Model
         //
@@ -901,67 +892,74 @@ define([
             }).withRelationships(self.relationships);
         };
         
-
-        ///// withFields :: overrides -> Collection
+        ///// overlayState :: State -> Collection
         //
-        // The "master" combinator for overwriting fields of the Collection constructor
-        
-        self.withFields = function(implementationFields) {
-            return Collection( _({}).extend(implementation, implementationFields) );
+        // This collection with a new notion of state overlayed.
+
+        self.overlayState = function(state) {
+            return Collection( _({}).extend(implementation, { state: state }) );
         }
-
-
+        self.withState = self.overlayState; // backwards compat; deprecated
         
-        ///// withState :: State -> Collection
+        ///// overlayRelationships :: {String: Relationship} -> Collection
         //
-        // This collection with a new notion of its state.
+        // This collection with additional relationships & the same models. Each
+        // required field of Collection is delegated to the underlying implementation.
 
-        self.withState = function(state) {
-            return self.withFields({ state: state });
-        }
-
-        
-        ///// withRelationships :: (String -> Relationship | undefined) -> Collection
-        //
-        // This collection with additional relationships & the same models
-
-        self.withRelationships = function(additionalRelationships) {
+        self.overlayRelationships = function(additionalRelationships) {
             var combinedRelationships = _({}).extend(self.relationships, additionalRelationships);
 
-            var newSelf = self.withFields({
+            var newSelf = Collection(_({}).extend(implementation, {
+
                 relationships: combinedRelationships,
-                fetch: function(options) {
-                    self.fetch(options);
-                    return newSelf;
+
+                fetch: function() { self.fetch(); return newSelf; },
+
+                create: function(args) {
+                    return self.create(args).then(function(createdModel) {
+                        return when.resolve(createdModel.withRelationships(combinedRelationships));
+                    });
                 },
+
                 models: c({
                     write: function(newModels) { self.models(newModels); },
                     read: function() {
-                        return _(self.models()).mapValues(function(model) { return model.withRelationships(combinedRelationships); });
+                        return _(self.models()).mapValues(function(model) { 
+                            return model.withRelationships(combinedRelationships); 
+                        });
                     }
                 }),
-
-                // This is a hack that violates abstraction pretty badly
-                withData: function(additionalData) {
-                    return self.withData(additionalData).withRelationships(additionalRelationships);
+                
+                withFields: function(modifiedFields) {
+                    return Collection(implementation.withFields(modifiedFields)).overlayRelationships(additionalRelationships);
                 }
-            });
+            }));
 
             return newSelf
         };
+        self.withRelationships = self.overlayRelationships; // deprecated alias
                                  
         
-        ///// withSubresourcesFrom :: {String:Collection} -> Collection
+        ///// overlayRelated :: ([String] | {String:Collection}) -> Collection
         //
         // A collection like this one but where each model will have its
         // attributes populated according to its relationships using the
         // provided collections.
 
-        self.withSubresourcesFrom = function(subresourceCollections) {
+        self.overlayRelated = function(relations) {
+            var overlayedCollections = {};
+
+            if ( _(relations).isObject() ) {
+                overlayedCollections = relations
+            } else {
+                _(arguments).each(function(attribute) { 
+                    overlayedCollections[attribute] = self.relatedCollection(attribute).fetch();
+                });
+            }
 
             var augmentedModels = c(function() {
                 return _(self.models()).mapValues(function(model) { 
-                    return model.withSubresourcesFrom(subresourceCollections); 
+                    return model.overlayRelated(overlayedCollections); 
                 })
             });
 
@@ -980,29 +978,22 @@ define([
 
             var augmentedCreate = function(modelArgs) {
                 var m = LocalModel(modelArgs);
-                var augmentedM = m.withSubresourcesFrom(subresourceCollections);
+                var augmentedM = m.withSubresourcesFrom(overlayedCollections);
                 augmentedM.attributes(modelArgs.attributes);
                 return self.create(_({}).extend(modelArgs, {
                     attributes: m.attributes()
                 }));
             };
             
-            return self.withFields({
+            return Collection( _({}).extend(implementation, {
                 state: augmentedState,
                 models: augmentedModels,
                 create: augmentedCreate
-            });
+            }));
         };
-    
+        self.withSubresourcesFrom = self.overlayRelated;
 
-        ///// withName :: String -> Collection
-        //
-        // This collection with a new name
-        
-        self.withName = function(name) {
-            return self.withFields({ name: name });
-        };
-
+        self.withName = function(name) { return self.withFields({ name: name }); };
 
         ///// withRelatedSubresources :: (String, ...) -> Collection
         //
@@ -1013,11 +1004,10 @@ define([
             var attrs = arguments;
             var colls = {};
             _(attrs).each(function(attr) { colls[attr] = self.relatedCollection(attr).fetch(); });
-            console.log(attrs);
 
             return self.withSubresourcesFrom(colls);
         };
-
+        self.withRelatedSubresources = self.overlayRelated; // deprecated alias
         
         ///// withParam :: {String: *} -> Collection
         //
@@ -1046,19 +1036,19 @@ define([
 
         args = args || {};
         var self = this;
-        var zoetrope = args.zoetrope || die('Missing required arg `zoetrope` for CollectionForBackend');
+        var zoetrope = args.zoetrope || die('Missing required arg `zoetrope` for CollectionForZoetrope');
+        self.zoetrope = zoetrope;
         
-
         ///// name, uri, debug, relationships
         //
         // Various simple parameters provided from outside
         
         self.uri = zoetrope.uri;
-        self.name = zoetrope.name;
-        self.debug = zoetrope.debug;
-        self.relationships = args.relationships;
+        self.name = args.name || zoetrope.name;
+        self.debug = args.debug || true;
+        self.relationships = args.relationships || {};
         self.data = w(args.data);
-        
+
         ///// state :: State 
         //
         // Public: observable
@@ -1082,6 +1072,7 @@ define([
 
                     return ModelForZoetrope({
                         name: name,
+                        state: 'ready',
                         relationships: self.relationships,
                         zoetrope: model.withFields({ name: name })
                     });
@@ -1126,27 +1117,26 @@ define([
         var newNonce = function() { nonce = Math.random(); return nonce; };
 
         self.fetch = function(options) {
+            var name = (options && options.name) || self.name;
+
             var combinedData = _({}).extend(self.data());
-            console.log((options && options.name) || self.name, '++>', combinedData);
 
             if ( _.chain(combinedData).values().any(function(v) { return v === NOFETCH; }).value() ) {
-                console.log((options && options.name) || self.name, '<++ (no fetch)');
+                initial = false;
                 return;
             }
 
             var myNonce = newNonce();
-            var doneFetching = zoetrope.fetch(combinedData, { name: self.name });
+            var doneFetching = zoetrope.fetch({ data: combinedData });
 
             mutableState('fetching');
 
             when(doneFetching)
                 .then(function(newZCollection) {
                     if (nonce !== myNonce) return;
-                    console.log((options && options.name) || self.name, '<++ (', _(zoetrope.models).size(), 'results)');
                     zoetrope = newZCollection;
                     updateModels(newZCollection.models);
                     mutableState('ready');
-                    console.log('Poops');
                     initial = false;
                 })
                 .otherwise(function(err) {
@@ -1157,9 +1147,7 @@ define([
             
             return Collection(self);
         };
-        console.log('Subscribing to', self.data);
         self.data.subscribe(function() { 
-            console.log('newdata', initial);
             if (!initial) self.fetch(); 
         });
 
@@ -1198,12 +1186,33 @@ define([
         
         self.withData = function(additionalData) { 
             var combinedData = c(function() { return _({}).extend(self.data(), u(additionalData)); });
-
             var next = CollectionForZoetrope( _({}).extend(args, { data: combinedData }) )
-            console.log('next', next.name, next);
             return next;
         };
+        
+        ///// withName :: String -> Collection
+        //
+        // This collection with a new name
+        
+        self.withFields = function(additionalFields) {
+            var newFields = _({
+                uri: self.uri,
+                name: self.name,
+                data: self.data,
+                debug: self.debug,
+                state: self.state(),
+            }).extend(additionalFields);
 
+            return CollectionForZoetrope(_({}).extend(newFields, {
+                zoetrope: zoetrope.withFields({
+                    uri: newFields.uri,
+                    data: newFields.data,
+                    name: newFields.name,
+                    debug: newFields.debug,
+                })
+            }));
+        };
+        
         return Collection(self);
     };
     
@@ -1221,11 +1230,13 @@ define([
 
         return CollectionForZoetrope({
             state: 'ready',
+            debug: args.debug,
             relationships: args.relationships || {},
             data: args.data,
             zoetrope: z.LocalCollection({
                 uri: uri,
                 name: name,
+                debug: args.debug,
                 data: args.data || {},
                 models: args.models,
             })
@@ -1241,21 +1252,26 @@ define([
     var RemoteCollection = function(args) {
         args = args || {};
 
-        return CollectionForZoetrope({
-            name: args.name,
+        var name = args.name || '(anonymous solidstate.RemoteCollection)';
+
+        var zoetropicRemoteCollection = z.RemoteCollection({
             uri: args.uri,
             data: args.data,
+            name: name + '[.zoetrope]',
+            debug: args.debug,
+            Backbone: args.Backbone
+        });
+        
+        return CollectionForZoetrope({
+            uri: args.uri,
+            zoetrope: zoetropicRemoteCollection,
+
+            name: name,
+            data: args.data || {},
+            debug: args.debug || false,
             state: 'initial',
             relationships: args.relationships || {},
-            models: args.models,
-
-            zoetrope: z.RemoteCollection({
-                uri: args.uri,
-                data: args.data,
-                name: args.name,
-                debug: args.debug,
-                Backbone: args.Backbone
-            })
+            models: args.models
         });
     }
 
@@ -1329,7 +1345,7 @@ define([
                         return data;
                     }).extend({throttle: 1});
                     
-                    return target.withData(targetData);
+                    return target.withFields({ data: targetData });
                 }
             });
         };
@@ -1652,7 +1668,7 @@ define([
         // Attributes that just come right off the zoetrope
         
         self.uri = zoetrope.uri;
-        self.debug = zoetrope.debug || false;
+        self.debug = args.debug || zoetrope.debug;
 
         ///// state :: State 
         //
@@ -1679,7 +1695,11 @@ define([
         var updateCollections = function(zCollections) {
             mutableCollections( 
                 _(zCollections).mapValues(function(zCollection, name) {
-                    return CollectionForZoetrope({ zoetrope: zCollection.withFields({name: name}) }) .withFields({ name: name });
+                    return CollectionForZoetrope({ 
+                        name: name, 
+                        debug: self.debug, 
+                        zoetrope: zCollection 
+                    });
                 })
             );
         };
@@ -1741,6 +1761,7 @@ define([
     var RemoteApi = function(args) {
         return ApiForZoetrope({
             state: 'initial',
+            debug: args.debug,
             zoetrope: z.RemoteApi(args)
         });
     };
@@ -1764,6 +1785,7 @@ define([
         NewModel: NewModel,
 
         // Collections
+        CollectionForZoetrope: CollectionForZoetrope,
         LocalCollection: LocalCollection,
         RemoteCollection: RemoteCollection,
 

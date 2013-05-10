@@ -24,7 +24,7 @@ define([
 
         });
         
-        it(".withData refetches whenever the data changes", function(done) {
+        it(".withFields({ data: ... }) refetches whenever the data changes", function(done) {
             var data = o({ foo: 1 });
             var fetch = sinon.spy();
             var MockBBCollection = Backbone.Collection.extend({ fetch: fetch, });
@@ -33,7 +33,7 @@ define([
             var c = ss.RemoteCollection({ 
                 Backbone: MockBackbone,
                 uri: 'fake://uri'
-            }).withData(data);
+            }).withFields({ data: data });
 
             expect(c.state()).to.equal('initial');
             c.fetch();

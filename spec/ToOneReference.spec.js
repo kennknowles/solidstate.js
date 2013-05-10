@@ -35,6 +35,17 @@ define([
                                 ss.LocalCollection({ models: { bizzle: ss.LocalModel() } })) ))
                     .to.equal(undefined);
             });
+            
+            it("ToOneReference(foo)(src, dst) becomes the right value reactively when found", function() {
+                var dst = ss.LocalModel();
+                var c = ss.LocalCollection({ models: { bizzle: ss.LocalModel() } });
+
+                var dereffed = deref(ss.LocalModel({ attributes: { sizzle: 'sazzle' } }), c);
+
+                expect(u(dereffed)).to.equal(undefined);
+                c.models({ sazzle: dst });
+                expect(u(dereffed).uri).to.equal(dst.uri);
+            });
 
             it("When set to a model not in the referenced collection, adds it", function() {
                 var collection = ss.LocalCollection({ models: {} });

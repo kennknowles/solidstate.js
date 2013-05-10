@@ -20,18 +20,7 @@ define([
     expect = chai.expect,
     assert = chai.assert;
 
-    describe("Collection", function() {
-        it("When the implementation is fetching, has state fetching", function(done) {
-            var deferred = when.defer();
-            var fetchModels = function(data) { return deferred.promise; };
-            var c = ss.LocalCollection().withFields({ fetchModels: fetchModels });
-
-            expect(c.state()).to.equal('ready');
-            c.fetch();
-            when(c.state.reaches('ready')).then(done);
-            deferred.resolve({});
-        });
-        
+    describe("Collection (fluent interface)", function() {
         it("Can have its state augmented replaced by .withState", function() {
             var c = ss.LocalCollection();
             expect(c.state()).to.equal('ready');
@@ -42,11 +31,13 @@ define([
             state2('fetching');
             expect(c2.state()).to.equal('fetching');
         });
+        
+        it("Can get a new debugging name via .withName", function() {
+            var c = ss.LocalCollection({ name: 'foo' });
+            expect(c.name).to.equal('foo');
 
-        it(".withData refetches whenever the data changes", function() {
-            var data = o({ foo: 1 });
-            var fetch = sinon.spy();
-            var c = ss.LocalCollection({ fetch: fetch }).withData(data);
+            var c2 = c.withName('baz');
+            expect(c2.name).to.equal('baz');
         });
 
         it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from theirs", function() {

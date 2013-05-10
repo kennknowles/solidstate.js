@@ -40,9 +40,9 @@ define([
                 });
         });
     
-        it(".withData also refetches when the data changes", function(done) {
+        it(".withFields({ data: ... }) also refetches when the data changes", function(done) {
             var data = o({});
-            var c = ss.LocalCollection().withData(data);
+            var c = ss.LocalCollection().withFields({ data: data });
             var fetch = sinon.spy(c, 'fetch');
 
             expect(c.state()).to.equal('ready');
@@ -58,6 +58,14 @@ define([
                 .otherwise(function(err) {
                     console.error(err.stack);
                 });
+        });
+
+        it("Get all the zoetrope's models", function() {
+            var m = z.LocalModel();
+            var zoetrope = z.LocalCollection({ models: { foo: m } });
+            var c = ss.CollectionForZoetrope({ zoetrope: zoetrope });
+
+            expect( _(c.models()).size() ).to.equal( _(zoetrope.models).size() );
         });
     });
 });

@@ -19,6 +19,8 @@ define([
     assert = chai.assert;
 
     describe("FilterLink :: {attr: filter, ...} -> (Link -> Link)", function() {
+
+        /* This is now private to the collection
         it("adds querystring filters to the target of a link", function() {
             var src = ss.LocalCollection({
                 models: {
@@ -41,5 +43,6 @@ define([
             expect(filteredDst.data().limit).to.equal(0);
             expect(filteredDst.data().my_filter.sort()).to.deep.equal([1, 2]);
         });
+        */
     });
 });

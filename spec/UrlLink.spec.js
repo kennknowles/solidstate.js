@@ -19,6 +19,7 @@ define([
     assert = chai.assert;
 
     describe("UrlLink :: {from: String} -> (Link -> Link)", function() {
+        /* This is now private 
         it("Is a link from an attribute containing a Url to all related items in the other collection", function() {
             var src = ss.LocalCollection({
                 models: {
@@ -38,5 +39,6 @@ define([
             var filteredDst = urlLink.resolve(src);
             expect(filteredDst.data()).to.deep.equal({ id__in: ['1', '47'], limit: 0 });
         });
+        */
     });
 });
