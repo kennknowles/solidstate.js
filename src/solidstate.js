@@ -880,7 +880,7 @@ define([
                 debug: self.debug,
                 attributes: modelArgs.attributes,
                 create: function(createArgs) {
-                    var doneCreating = implementation.create(createArgs);
+                    var doneCreating = self.create(createArgs);
 
                     return when(doneCreating)
                         .then(function(createdModel) {
@@ -1090,7 +1090,6 @@ define([
         // for a saved model with the same attributes
 
         self.create = function(args) {
-            
             var doneCreating = zoetrope.create({
                 debug: args.debug,
                 attributes: _(args.attributes).mapValues(u),
