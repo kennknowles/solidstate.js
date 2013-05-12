@@ -1381,7 +1381,7 @@ define([
             transform: function(uri) { 
                 if (!uri) return uri; // Preserve null and undefined
                 
-                if (!_(uri).isString()) throw new Error('UrlLink given a property `' + args.from + '` that is not a string!');
+                if (!_(uri).isString()) throw new Error('UrlLink given a property `' + args.from + '` that is not a string:', uri);
                 
                 // If it ends in a slash, grab the second-to-last segment for now...
                 if ( uri[uri.length - 1] === '/' )
