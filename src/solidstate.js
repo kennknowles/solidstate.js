@@ -5,20 +5,20 @@
 /* jshint -W030 */
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
-    'contracts-js',
+    //'contracts-js',
     'knockout',
     'underscore',
     'URIjs',
     'when',
     'zoetropic'
-], function(contracts, ko, _, URI, when, z) {
+], function(/*contracts,*/ ko, _, URI, when, z) {
     'use strict';
     
-    contracts.enabled(false);
+    //contracts.enabled(false);
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
-    var C = contracts,
+    var //C = contracts,
         o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed,
@@ -37,7 +37,7 @@ define([
     // Secret value that indicates something should not bother to fetch
     var NOFETCH = "solidstate.NOFETCH";
 
-    var i = C.guard(C.Num, 3);
+    //var i = C.guard(C.Num, 3);
     
     ///// Attributes
     //
