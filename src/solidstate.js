@@ -1,7 +1,5 @@
 /* jshint -W070 */
 /* jshint -W064 */
-/* jshint -W025 */
-/* jshint -W055 */
 /* jshint -W030 */
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
