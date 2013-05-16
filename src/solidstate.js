@@ -787,6 +787,9 @@ define([
         if (!(this instanceof Collection)) return new Collection(implementation);
 
         var self = this;
+
+        // For debug loggign
+        self.implementation = implementation;
         
         ///// uri :: String
         //
@@ -840,7 +843,12 @@ define([
         // with different parameters is created.
         
         self.withFields = implementation.withFields || die('Collection implementation missing required field `withFields`');
-        self.withData = function(data) { return self.withFields({ data: data }); }; // deprecated alias
+
+        // TODO: Separate extending the data and replacing it. For LocalCollection it does not matter,
+        // while for RemoteCollection the intend is always to derive the collection from this one, so extending
+        // is really the only reasonable move. (If semantically a collection is seen as a set with no
+        // intrinsic "universal" set when the filters are removed)
+        self.withData = function(data) { return _(implementation).has('withData') ? implementation.withData(data) : implementation.withFields({ data: data }) };
 
         // Overlayed Fields and Combinators
         // ================================
@@ -929,6 +937,10 @@ define([
                 
                 withFields: function(modifiedFields) {
                     return Collection(implementation.withFields(modifiedFields)).overlayRelationships(additionalRelationships);
+                },
+
+                withData: function(additionalData) {
+                    return Collection(implementation.withData(additionalData)).overlayRelationships(additionalRelationships);
                 }
             }));
 
