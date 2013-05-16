@@ -1614,7 +1614,7 @@ define([
                             
                             var linkToDestination = Link({
                                 resolve: function(src) {
-                                    var dst = newCollections[relationshipDescriptor.collection] || die('Reference to unknown collection:' + name);
+                                    var dst = newCollections[relationshipDescriptor.collection] || die('Reference to unknown collection: ' + relationshipDescriptor.collection);
                                     return LinkToCollection(dst).resolve(src).withFields({ name: src.name + '.' + attribute });
                                 }
                             });
