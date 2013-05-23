@@ -513,7 +513,7 @@ define([
                         }
                     }
                 }
-                return "ready";
+                return self.state();
             }));
 
             return augmentedSelf.withFields({ state: augmentedState });
