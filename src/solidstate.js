@@ -633,16 +633,19 @@ define([
             mutableState('saving');
             
             when(doneSaving)
-                .then(function(newZoetrope) {
-                    if (nonce !== myNonce) return;
-                    self.attributes(newZoetrope.attributes);
-                    mutableErrors(newZoetrope.errors);
-                    self.state('ready');
-                })
                 .otherwise(function(newZoetrope) {
                     if (nonce !== myNonce) return;
                     mutableErrors(newZoetrope.errors);
-                    self.state(initial ? 'initial' : 'ready');
+                    mutableState(initial ? 'initial' : 'ready');
+                })
+                .then(function(newZoetrope) {
+                    if (nonce !== myNonce) return;
+                    // Do not overwrite local attributes... but should assert they equal what we want  self.attributes(newZoetrope.attributes);
+                    // Errors should cause the promise to reject // mutableErrors(newZoetrope.errors);
+                    mutableState('ready');
+                })
+                .otherwise(function(exception) {
+                    console.error(exception.stack);
                 });
 
             return Model(self);
