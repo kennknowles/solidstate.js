@@ -493,7 +493,7 @@ define([
 
             var augmentedSelf = self.withAttributes(overlayedAttributes);
 
-            var augmentedState = c(function() {
+            var augmentedState = State(c(function() {
                 for (var field in subresourceCollections) {
                     if ( !u(self.attributes()[field]) ) 
                         continue;
@@ -514,7 +514,7 @@ define([
                     }
                 }
                 return "ready";
-            });
+            }));
 
             return augmentedSelf.withFields({ state: augmentedState });
         };
