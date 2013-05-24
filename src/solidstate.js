@@ -498,7 +498,7 @@ define([
 
             var augmentedSelf = self.withAttributes(overlayedAttributes);
 
-            var augmentedStateWithExplanation = State(c(function() {
+            var augmentedStateWithExplanation = c(function() {
                 for (var field in subresourceCollections) {
                     if ( !u(self.attributes()[field]) ) 
                         continue;
@@ -519,10 +519,10 @@ define([
                     }
                 }
                 return [self.state(), 'All subresource fetched; ' + self.stateExplanation()];
-            }));
+            });
 
             var augmentedStateExplanation = c(function() { return augmentedStateWithExplanation()[1]; });
-            var augmentedState = c(function() { return augmentedStateWithExplanation()[0]; });
+            var augmentedState = State(c(function() { return augmentedStateWithExplanation()[0]; }));
 
             return augmentedSelf.withFields({ state: augmentedState, stateExplanation: augmentedStateExplanation });
         };
@@ -1005,12 +1005,12 @@ define([
                     return [self.state(), 'All models ready for ' + self.name];
             });
 
-            var augmentedState = c({
+            var augmentedState = State(c({
                 read: function() { return augmentedStateWithExplanation()[0]; },
                 write: function(newValue) {
                     self.state(newValue);
                 }
-            });
+            }));
             
             var augmentedStateExplanation = c(function() { return augmentedStateWithExplanation()[1]; });
 
