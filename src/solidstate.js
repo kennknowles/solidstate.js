@@ -247,6 +247,11 @@ define([
 
         self.state = implementation.state || die('Model implementation missing mandatory field `state`');
 
+        ///// stateExplanation
+        //
+        // An explanation for why the state is unready, useful since often it is due to overlays, etc
+
+        self.stateExplanation = implementation.stateExplanation || o('No reason given');
 
         ///// attributes :: Attributes
         //
@@ -493,7 +498,7 @@ define([
 
             var augmentedSelf = self.withAttributes(overlayedAttributes);
 
-            var augmentedState = State(c(function() {
+            var augmentedStateWithExplanation = State(c(function() {
                 for (var field in subresourceCollections) {
                     if ( !u(self.attributes()[field]) ) 
                         continue;
@@ -501,22 +506,25 @@ define([
                     var val = augmentedSelf.attributes()[field]();
 
                     if ( !val )
-                        return "fetching";
+                        return ["fetching", 'Thus far missing subresource ' + self.name + '.' + field + ', for ' + u(self.attributes()[field])];
 
                     if ( _(val).has('state') && (val.state() !== 'ready') ) 
-                        return val.state();
+                        return [val.state(), self.name + '.' + field + ' has state ' + val.state() + ':\n\t' + val.stateExplanation()];
 
                     if ( _(val).isArray() ) {
                         for (var i in val) {
                             if ( _(val[i]).has('state') && (val[i].state() !== 'ready') )
-                                return val[i].state();
+                                return [val[i].state(), self.name + '.' + field + ' has state ' + val[i].state() + ':\n\t' + val[i].stateExplanation()];
                         }
                     }
                 }
-                return self.state();
+                return [self.state(), 'All subresource fetched; ' + self.stateExplanation()];
             }));
 
-            return augmentedSelf.withFields({ state: augmentedState });
+            var augmentedStateExplanation = c(function() { return augmentedStateWithExplanation()[1]; });
+            var augmentedState = c(function() { return augmentedStateWithExplanation()[0]; });
+
+            return augmentedSelf.withFields({ state: augmentedState, stateExplanation: augmentedStateExplanation });
         };
         self.withSubresourcesFrom = self.overlayRelated;
         
@@ -566,6 +574,7 @@ define([
         var mutableState = State(args.state || 'initial');
         self.state = mutableState.readOnly;
         self.state.reaches('ready').then(function() { initial = false; });
+        self.stateExplanation = o('Actual state of ModelForZoetrope');
 
         ///// attributes :: Attributes
         //
@@ -712,6 +721,13 @@ define([
             // Seems to be a bug where initializationState is 'ready' when the createdModel is not yet
             return ((initializationState() === 'ready') && createdModel()) ? createdModel().state() : initializationState(); 
         }));
+
+        self.stateExplanation = c(function() {
+            if ((initializationState() !== 'ready') || !createdModel())
+                return 'NewModel ' + self.name + ' not yet successfully initialized; ' + initialModel.stateExplanation();
+            else
+                return 'NewModel ' + self.name + ' initialized; ' + createdModel().stateExplanation();
+        });
         
         self.errors = c(function() { return createdModel() ? createdModel().errors() : errors(); });
        
@@ -823,6 +839,12 @@ define([
         // The state *must* be writable. Why?
 
         self.state = implementation.state || die('Collection implementation missing required field `state`');
+        
+        ///// stateExplanation
+        //
+        // An explanation for why the state is unready, useful since often it is due to overlays, etc
+
+        self.stateExplanation = implementation.stateExplanation || o('No reason given');
 
         ///// create :: * -> Promise Model
         //
@@ -975,18 +997,22 @@ define([
                 })
             });
 
+            var augmentedStateWithExplanation = c(function() {
+                var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
+                if ( m ) 
+                    return [m.state(), self.name + ' waiting for model: ' + m.stateExplanation()];
+                else
+                    return [self.state(), 'All models ready for ' + self.name];
+            });
+
             var augmentedState = c({
-                read: function() {
-                    var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
-                    if ( m ) 
-                        return m.state();
-                    else
-                        return self.state();
-                },
+                read: function() { return augmentedStateWithExplanation()[0]; },
                 write: function(newValue) {
                     self.state(newValue);
                 }
             });
+            
+            var augmentedStateExplanation = c(function() { return augmentedStateWithExplanation()[1]; });
 
             var augmentedCreate = function(modelArgs) {
                 var m = LocalModel(modelArgs);
@@ -999,6 +1025,7 @@ define([
             
             var newSelf = Collection( _({}).extend(implementation, {
                 state: augmentedState,
+                stateExplanation: augmentedStateExplanation,
                 models: augmentedModels,
                 create: augmentedCreate,
                 fetch: function() { self.fetch(); return newSelf; }
