@@ -183,6 +183,8 @@ define([
         var self = w( underlyingObservable || ko.observable('initial') );
 
         var stateDeferreds = {};
+        var nextDeferreds = {};
+        
         var resolveStateDeferred = function() {
             var state = self.peek();
 
@@ -190,6 +192,32 @@ define([
                 stateDeferreds[state].resolve();
                 delete stateDeferreds[state];
             }
+        };
+
+        var resolveNextDeferred = function() {
+            var state = self.peek();
+            
+            if ( _(nextDeferreds).has(state) ) {
+                nextDeferred[state].resolve();
+                delete nextDeferred[state];
+            }
+            _(nextDeferreds).each(function(deferred) {
+                deferred.reject(state);
+            });
+            nextDeferreds = {};
+        }
+
+        ///// next :: String -> Promise ()
+        //
+        // A promise that resolves only if the very next state matches, otherwise rejects
+
+        self.next = function(goalState) {
+            if ( !_(nextDeferreds).has(goalState) ) {
+                nextDeferreds[goalState] = when.defer();
+            }
+            var promise = nextDeferreds[goalState].promise;
+            resolveNextDeferred();
+            return promise;
         };
 
         ///// reaches :: String -> Promise ()
@@ -208,6 +236,7 @@ define([
 
         self.subscribe(function() {
             resolveStateDeferred();
+            resolveNextDeferred();
         });
 
         ///// readOnly
@@ -218,6 +247,7 @@ define([
             return self();
         });
         self.readOnly.reaches = self.reaches;
+        self.readOnly.next = self.next;
 
         return self;
     }
@@ -636,28 +666,28 @@ define([
         // the input values from the user.
 
         self.save = function() { 
-            var myNonce = newNonce();
-            var doneSaving = zoetrope.save( _(self.attributes()).mapValues(function(obs) { return obs(); }) ); 
-
             mutableState('saving');
+            var myNonce = newNonce();
+            var zoetropeDoneSaving = zoetrope.save( _(self.attributes()).mapValues(function(obs) { return obs(); }) ); 
             
-            when(doneSaving)
+            return when(zoetropeDoneSaving)
                 .otherwise(function(newZoetrope) {
                     if (nonce !== myNonce) return;
                     mutableErrors(newZoetrope.errors);
                     mutableState(initial ? 'initial' : 'ready');
+                    return when.reject();
                 })
                 .then(function(newZoetrope) {
                     if (nonce !== myNonce) return;
                     // Do not overwrite local attributes... but should assert they equal what we want  self.attributes(newZoetrope.attributes);
                     // Errors should cause the promise to reject // mutableErrors(newZoetrope.errors);
                     mutableState('ready');
+                    return when.resolve(Model(self));
                 })
                 .otherwise(function(exception) {
                     console.error(exception.stack);
+                    return when.reject();
                 });
-
-            return Model(self);
         };
 
         return Model(self);
@@ -747,36 +777,35 @@ define([
         };
 
         self.save = function(options) { 
-            if (initializationState() === 'ready') {
-                createdModel().save(options);
-                return Model(self);
-
+            if (createdModel() && (initializationState() === 'ready')) {
+                return createdModel().save(options).then(function() {
+                    return when.resolve(Model(self));
+                })
+                
             } else if (initializationState() === 'initial') {
 
-                var doneCreating = self.create({
-                    attributes: initialModel.attributes(),
-                    debug: initialModel.debug,
-                    name: self.name
-                });
                 initializationState('saving');
 
-                when(doneCreating)
+                return self
+                    .create({
+                        attributes: initialModel.attributes(),
+                        debug: initialModel.debug,
+                        name: self.name
+                    })
                     .otherwise(function(creationErrors) {
                         errors(creationErrors);
-                        initializationState('error');
                         initializationState('initial');
+                        return when.reject(creationErrors);
                     })
                     .then(function(actuallyCreatedModel) {
                         createdModel(actuallyCreatedModel);
+                        errors({});
                         initializationState('ready');
-                     })
-                    .otherwise(function(exception) {
-                        console.error(exception.stack);
-                    });
+                        return when.resolve(Model(self));
+                    })
             } 
-            return Model(self);
         };
-
+        
         return Model(self);
     };
     
@@ -1018,9 +1047,14 @@ define([
                 var m = LocalModel(modelArgs);
                 var augmentedM = m.withSubresourcesFrom(overlayedCollections);
                 augmentedM.attributes(modelArgs.attributes);
-                return self.create(_({}).extend(modelArgs, {
-                    attributes: m.attributes()
-                }));
+
+                return self
+                    .create(_({}).extend(modelArgs, {
+                        attributes: m.attributes()
+                    }))
+                    .then(function(createdModel) {
+                        return when.resolve(createdModel.overlayRelated(overlayedCollections));
+                    });
             };
             
             var newSelf = Collection( _({}).extend(implementation, {
@@ -1143,7 +1177,6 @@ define([
                     }));
                 })
                 .otherwise(function(err) {
-                    console.error(err);
                     return when.reject(err);
                 });
         }
