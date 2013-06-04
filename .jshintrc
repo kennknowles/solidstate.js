@@ -1,5 +1,7 @@
 {
     "asi":    true,
     "eqeqeq": true, 
-    "strict": true
+    "strict": true,
+    "-W014": true,
+    "-W070": true
 }
