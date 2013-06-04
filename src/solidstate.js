@@ -671,11 +671,11 @@ define([
             var zoetropeDoneSaving = zoetrope.save( _(self.attributes()).mapValues(function(obs) { return obs(); }) ); 
             
             return when(zoetropeDoneSaving)
-                .otherwise(function(newZoetrope) {
+                .otherwise(function(zoetropeErrors) {
                     if (nonce !== myNonce) return;
-                    mutableErrors(newZoetrope.errors);
+                    mutableErrors(zoetropeErrors);
                     mutableState(initial ? 'initial' : 'ready');
-                    return when.reject();
+                    return when.reject(zoetropeErrors);
                 })
                 .then(function(newZoetrope) {
                     if (nonce !== myNonce) return;
