@@ -41,9 +41,12 @@ define([
     // An observable dictionary with the property that writing the whole dictionary
     // actually writes individually to each attribute.
     //
+    // As this is not a dependent observable but a mutable cell, it will _peek_
+    // at args.attributes to initalize itself
+    //
     // args :: {
-    //   attributes :: String ->
-    //   makeAttribute :: (Key, Value) -> observable
+    //   attributes :: String -> Observable
+    //   makeAttribute :: (Key, Value) -> Observable
     // }
     var Attributes = function(args) {
         args = args || {};
@@ -58,13 +61,17 @@ define([
             write: function(_newAttributes) {
                 var keysChanged = false;
                 var nextAttributes = _(actualAttributes.peek()).clone();
-                var newAttributes = u(_newAttributes);
+                var newAttributes = _newAttributes.peek ? _newAttributes.peek() : _newAttributes;
 
                 _(newAttributes).each(function(value, key) {
+                    value = (value && value.peek) 
+                        ? value.peek() 
+                        : value;
+
                     if (_(nextAttributes).has(key)) {
-                        nextAttributes[key](u(value));
+                        nextAttributes[key](value);
                     } else {
-                        nextAttributes[key] = makeAttribute(key, u(value));
+                        nextAttributes[key] = makeAttribute(key, value);
                         keysChanged = true;
                     }
                 });
@@ -685,8 +692,8 @@ define([
                     return when.resolve(Model(self));
                 })
                 .otherwise(function(exception) {
-                    console.error(exception.stack);
-                    return when.reject();
+                    console.error(exception, exception.stack);
+                    return when.reject(exception);
                 });
         };
 
