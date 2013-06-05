@@ -465,7 +465,17 @@ define([
 
         self.toJSON = function() {
             var result = {};
-            _(u(self.attributes)).each(function(value, key) { result[key] = u(value); });
+            _(u(self.attributes)).each(function(value, key) { 
+                // Primitive but useful attempt at recursing well
+                value = u(value);
+                if ( value instanceof Model ) {
+                    result[key] = value.toJSON();
+                } else if ( _(value).isArray() && value[0] && (value[0] instanceof Model) ) {
+                    result[key] = _(value).map(function(v) { return v.toJSON(); });
+                } else {
+                    result[key] = value;
+                }
+            });
             return result;
         };
 
