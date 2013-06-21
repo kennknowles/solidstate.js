@@ -1221,7 +1221,7 @@ define([
             var doneFetching = zoetrope.fetch({ data: combinedData });
 
             mutableState('fetching');
-
+                    
             when(doneFetching)
                 .then(function(newZCollection) {
                     if (nonce !== myNonce) return;
@@ -1232,10 +1232,13 @@ define([
                 })
                 .otherwise(function(err) {
                     if (nonce !== myNonce) return;
-                    console.error(err.stack);
-                    mutableState(initial ? 'initial' : 'ready');
-                });
-            
+                    console.error(err);
+                    mutableState('error');
+                    when(self.state.reaches('error')).then(function() {
+                        mutableState(initial ? 'initial' : 'ready');
+                    });
+                })
+            ;
             return Collection(self);
         };
         self.data.subscribe(function() { 
