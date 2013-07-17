@@ -109,6 +109,8 @@ define([
             write: function(_newModels) {
                 var keysChanged = false;
                 var nextModels = _(actualModels.peek()).clone();
+                var currentKeys = _(nextModels).keys();
+
                 var newModels = u(_newModels);
 
                 _(newModels).each(function(model, uri) {
@@ -119,6 +121,15 @@ define([
                         keysChanged = true;
                     }
                 });
+
+                // Now we do clear out the old models... previously not but this will crush joins and memory usage
+                var removedKeys = _(currentKeys).difference( _(newModels).keys() );
+                if ( removedKeys ) {
+                    keysChanged = true;
+                    _(removedKeys).each(function(uri) {
+                        delete nextModels[uri];
+                    });
+                }
                 
                 // Note that there is currently no way to remove an attribute (because that is a weird thing to do and the semantics aren't clean)
 
