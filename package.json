@@ -1,6 +1,6 @@
 {
     "name": "solidstate",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "A high-level & highly automatic REST client for Javascript with a dramatically simple & fluent API.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
@@ -27,7 +27,7 @@
         "underscore":  ">=1.4",
         "URIjs": ">=1.10",
         "when": ">=2.0.1",
-        "zoetropic": ">=0.0.5"
+        "zoetropic": ">=0.0.6"
     },
     "devDependencies": {
         "chai": ">=1.5.0",
