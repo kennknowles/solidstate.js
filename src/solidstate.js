@@ -885,6 +885,12 @@ define([
         // The state *must* be writable. Why?
 
         self.state = implementation.state || die('Collection implementation missing required field `state`');
+
+        ///// metadata :: {*: *}
+        //
+        // Arbitrary read-only observable of metadata
+
+        self.metadata = implementation.metadata || o({});
         
         ///// stateExplanation
         //
@@ -1152,6 +1158,16 @@ define([
         var mutableState = State(args.state || 'initial');
         var initial = mutableState.peek() === 'initial';
         self.state = mutableState.readOnly;
+
+        ////// metadata :: {*: *}
+        //
+        // Public: observable
+        // Private: mutable observable
+        //
+        // arbitrary key-value mapping to store e.g. paging info. Sort of ad-hoc at the moment
+
+        var mutableMetadata = ko.observable({});
+        self.metadata = ko.computed(function() { return mutableMetadata(); });
         
         ///// Models
         //
@@ -1227,6 +1243,7 @@ define([
                     if (nonce !== myNonce) return;
                     zoetrope = newZCollection;
                     updateModels(newZCollection.models);
+                    mutableMetadata(newZCollection.metadata);
                     mutableState('ready');
                     initial = false;
                 })
