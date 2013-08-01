@@ -1107,8 +1107,6 @@ define([
                 }
             }));
             
-            var augmentedStateExplanation = c(function() { return augmentedStateExplanation(); });
-
             var augmentedCreate = function(modelArgs) {
                 var m = LocalModel(modelArgs);
                 var augmentedM = m.withSubresourcesFrom(overlayedCollections);
