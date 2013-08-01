@@ -40,7 +40,7 @@ define([
             expect(c2.name).to.equal('baz');
         });
 
-        it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from theirs", function() {
+        it("Provides .withSubresourcesFrom that applies to all of its models, and derives its ready state from their initial load", function(done) {
             var c = ss.LocalCollection({
                 models: {
                     'one': ss.LocalModel({ attributes: { foo: "baz"} }),
@@ -55,6 +55,7 @@ define([
 
             expect(c.state()).to.equal("ready");
 
+            console.log(c2);
             expect(c2.state()).to.equal("ready");
             expect(c2.models().one.state()).to.equal("ready");
             expect(c2.models().one.attributes().foo()).to.equal(24);
@@ -68,11 +69,18 @@ define([
             expect(c3.models().two.attributes().foo()).to.equal(undefined);
 
             incomplete_models({baz: 29, biz: 101});
-            expect(c3.state()).to.equal("ready");
-            expect(c3.models().one.state()).to.equal("ready");
-            expect(c3.models().one.attributes().foo()).to.equal(29);
-            expect(c3.models().two.state()).to.equal("ready");
-            expect(c3.models().two.attributes().foo()).to.equal(101);
+            c3.state.reaches('ready')
+                .then(function() {
+                    expect(c3.state()).to.equal("ready");
+                    expect(c3.models().one.state()).to.equal("ready");
+                    expect(c3.models().one.attributes().foo()).to.equal(29);
+                    expect(c3.models().two.state()).to.equal("ready");
+                    expect(c3.models().two.attributes().foo()).to.equal(101);
+                    done()
+                })
+                .otherwise(function(err) {
+                    done(err);
+                });
         });
         
         it("Creates new models with .newModel that appropriately proxy subresources", function() {

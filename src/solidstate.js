@@ -1055,22 +1055,59 @@ define([
                 })
             });
 
-            var augmentedStateWithExplanation = c(function() {
+            var augmentedModelsState = State(c(function() {
+                var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
+                if ( m )
+                    return m.state();
+                else
+                    return 'ready';
+            }));
+
+            var augmentedStateExplanation = c(function() {
                 var m = _(augmentedModels()).find(function(m) { return m.state() !== "ready"; });
                 if ( m ) 
-                    return [m.state(), self.name + ' waiting for model: ' + m.stateExplanation()];
+                    return self.name + ' waiting for model: ' + m.stateExplanation();
                 else
-                    return [self.state(), 'All models ready for ' + self.name];
+                    return 'All models ready for ' + self.name;
+            });
+
+            // Whenever self.state returns to `fetching` this does too, and then
+            // waits for all the underlying models
+            var underlyingAugmentedState = State(o(
+                (augmentedModelsState() !== 'ready') ? augmentedModelsState() : self.state()
+            ));
+
+            var awaitReady = function() {
+                self.state.reaches('ready')
+                    .then(function() {
+                        return augmentedModelsState.reaches('ready')
+                    })
+                    .then(function() {
+                        underlyingAugmentedState('ready');
+                    })
+                    .otherwise(function(err) {
+                        console.error(err.stack);
+                    });
+            };
+            awaitReady();
+
+            self.state.subscribe(function(newState) {
+                if ( newState !== 'ready' ) {
+                    underlyingAugmentedState(newState);
+                    awaitReady();
+                }
             });
 
             var augmentedState = State(c({
-                read: function() { return augmentedStateWithExplanation()[0]; },
+                read: function() { 
+                    return underlyingAugmentedState(); 
+                },
                 write: function(newValue) {
                     self.state(newValue);
                 }
             }));
             
-            var augmentedStateExplanation = c(function() { return augmentedStateWithExplanation()[1]; });
+            var augmentedStateExplanation = c(function() { return augmentedStateExplanation(); });
 
             var augmentedCreate = function(modelArgs) {
                 var m = LocalModel(modelArgs);
@@ -1093,6 +1130,9 @@ define([
                 create: augmentedCreate,
                 fetch: function() { self.fetch(); return newSelf; }
             }));
+
+            // Not part of the public interface
+            newSelf.underlyingCollection = self;
 
             return newSelf;
         };
