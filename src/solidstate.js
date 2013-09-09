@@ -486,13 +486,13 @@ define([
         };
 
         
-        ///// withAttributes :: Attributes -> Model
+        ///// overlayAttributes :: Attributes -> Model
         //
         // Overlays the provided attributes in the observable.
         // Reads & writes will be appropriately directly to
         // the current attributes and the overlayed attributes.
         
-        self.withAttributes = function(overlayedAttributes) {
+        self.overlayAttributes = function(overlayedAttributes) {
             var augmentedAttributes = c({
                 read: function() {
                     var underlyingAttributesNow = self.attributes();
@@ -519,6 +519,7 @@ define([
 
             return self.withFields({ attributes: augmentedAttributes });
         };
+        self.withAttributes = self.overlayAttributes;
         
 
         ///// overlayRelated :: {String: Collection} -> Model
@@ -549,7 +550,7 @@ define([
                 }
             });
 
-            var augmentedSelf = self.withAttributes(overlayedAttributes);
+            var augmentedSelf = self.overlayAttributes(overlayedAttributes);
 
             var augmentedStateWithExplanation = c(function() {
                 for (var field in subresourceCollections) {
@@ -580,7 +581,37 @@ define([
             return augmentedSelf.withFields({ state: augmentedState, stateExplanation: augmentedStateExplanation });
         };
         self.withSubresourcesFrom = self.overlayRelated;
-        
+
+        // stripOverlays :: ({String: Collection}|[String]) -> Model
+        //
+        // Removes overlays to give the underlying model again
+
+        self.stripOverlays = function(overlays) {
+            if ( ! _(overlays).isArray() )
+                overlays = _(overlays).keys();
+
+            var strippedAttributes = Attributes({
+                // The initial values of the attributes will be ignored, because
+                // all of them will cause a call to `makeAttribute` which sets up the proxying,
+                // so any dictionary with the right keys is fine
+                attributes: _(self.attributes()).pick(overlays),
+
+                makeAttribute: function(field, value) {
+                    // A new attribute should never be possible, so the only time this is called
+                    // is on initialization, when the value can be ignored because it will be proxied.
+                    var relationship = self.relationships[field] || { deref: ToOneReference({from: field}) };
+
+                    // This observable will write to the underlying attribute properly whether it already existed or not
+                    var strippedAttribute = o(value.attributes().resource_uri());
+
+                    // Set the underlying attribute immediately
+                    return strippedAttribute;
+                }
+            });
+
+            return self.overlayAttributes(strippedAttributes);
+        }
+
         // toString :: () -> String
         //
         // Just some sort of friendly-ish string
@@ -1037,6 +1068,9 @@ define([
         // A collection like this one but where each model will have its
         // attributes populated according to its relationships using the
         // provided collections.
+        //
+        // New models added to the collection must already be augmented
+        // the same way.
 
         self.overlayRelated = function(relations) {
             var overlayedCollections = {};
@@ -1049,10 +1083,20 @@ define([
                 });
             }
 
-            var augmentedModels = c(function() {
-                return _(self.models()).mapValues(function(model) { 
-                    return model.overlayRelated(overlayedCollections); 
-                })
+            var augmentedModels = c({
+                read: function() {
+                    return _(self.models()).mapValues(function(model) { 
+                        return model.overlayRelated(overlayedCollections); 
+                    })
+                },
+                write: function(newModels) {
+                    var stripped = _(newModels).mapValues(function(augmentedModel) {
+                        return augmentedModel.stripOverlays(overlayedCollections);
+                    });
+                    console.log('Writing', stripped);
+
+                    self.models( stripped );
+                }
             });
 
             var augmentedModelsState = State(c(function() {
@@ -1293,7 +1337,7 @@ define([
                 })
                 .otherwise(function(err) {
                     if (nonce !== myNonce) return;
-                    console.error(err);
+                    console.error(err.stack);
                     mutableState('error');
                     when(self.state.reaches('error')).then(function() {
                         mutableState(initial ? 'initial' : 'ready');
@@ -1584,8 +1628,8 @@ define([
                    if (!v) return v;
 
                    if (_(v).isString()) {
-                       if ( !_(collection.models).has(v) ) die('Model with URI ' + v +
-                                                               ' was not found in ' + collection.name +
+                       if ( !_(collection.models()).has(v) ) die('Model with URI ' + v +
+                                                               ' was not found in ' + collection.name + 
                                                                ' - this probably indicates an accidental writing of a URI when you need to write a Model');
                        
                        return v;
