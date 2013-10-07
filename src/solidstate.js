@@ -236,7 +236,7 @@ define([
         ///// reaches :: String -> Promise ()
         //
         // A promise that resolves when this state machine arrives 
-        // the state passed in.
+        // at the state passed in.
 
         self.reaches = function(goalState) {
             if ( !_(stateDeferreds).has(goalState) ) {
@@ -275,6 +275,7 @@ define([
         if ( !(this instanceof Model) ) return new Model(implementation);
 
         var self = this;
+        self.implementation = implementation;
 
         ///// name :: String
         //
@@ -665,7 +666,7 @@ define([
         // Public: mutable observable
 
         self.attributes = Attributes({ attributes: zoetrope.attributes });
-        
+
         ////// errors :: observable {...}
         //
         // Public: observable
@@ -707,7 +708,7 @@ define([
                     if (nonce !== myNonce) return;
                     mutableErrors(newZoetrope.errors);
                     mutableState(initial ? 'initial' : 'ready');
-                })
+                });
 
             return Model(self);
         };
@@ -1093,7 +1094,6 @@ define([
                     var stripped = _(newModels).mapValues(function(augmentedModel) {
                         return augmentedModel.stripOverlays(overlayedCollections);
                     });
-                    console.log('Writing', stripped);
 
                     self.models( stripped );
                 }
@@ -1577,8 +1577,8 @@ define([
             to:        'id__in',
             transform: function(uri) { 
                 if (!uri) return uri; // Preserve null and undefined
-                
-                if (!_(uri).isString()) throw new Error('UrlLink given a property `' + args.from + '` that is not a string:', uri);
+
+                if (!_(uri).isString()) throw new Error('UrlLink given a property `' + args.from + '` that is not a string:' + uri);
                 
                 // If it ends in a slash, grab the second-to-last segment for now...
                 if ( uri[uri.length - 1] === '/' )
