@@ -25,7 +25,7 @@
         "underscore":  ">=1.4",
         "URIjs": ">=1.10",
         "when": ">=2.0.1",
-        "zoetropic": ">=0.1.0"
+        "zoetropic": ">=0.1.1"
     },
     "devDependencies": {
         "chai": ">=1.5.0",
