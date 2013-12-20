@@ -24,21 +24,21 @@ optimized: #TODO
 
 .PHONY: jshint
 jshint:
-	$(JSHINT) --verbose src spec
+	$(JSHINT) --verbose lib test
 
 .PHONY: test
 test: jshint
-	$(MOCHA) --reporter dot ./spec/mocha-spec-runner.js
+	$(MOCHA) --reporter dot ./test/mocha-spec-runner.js
 
 .PHONY: coverage
 coverage: jshint lib-cov
-	ISTANBUL_REPORTERS=text-summary,html,lcov SOLIDSTATE_PATH=lib-cov/solidstate $(MOCHA) --reporter mocha-istanbul ./spec/mocha-spec-runner.js
+	ISTANBUL_REPORTERS=text-summary,html,lcov SOLIDSTATE_PATH=lib-cov/solidstate $(MOCHA) --reporter mocha-istanbul ./test/mocha-spec-runner.js
 
 #
 # Actual file targets
 #
 
-lib-cov: src/solidstate.js 
+lib-cov: lib/solidstate.js
 	rm -rf lib-cov
 	mkdir -p lib-cov
-	$(ISTANBUL) instrument --output lib-cov --no-compact --variable global.__coverage__ src
+	$(ISTANBUL) instrument --output lib-cov --no-compact --variable global.__coverage__ lib

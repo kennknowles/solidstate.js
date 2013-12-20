@@ -1,13 +1,12 @@
 {
     "name": "solidstate",
     "version": "0.6.0",
-    "description": "A high-level & highly automatic REST client for Javascript with a dramatically simple & fluent API.",
+    "description": "An observable REST client for Javascript with a dramatically simple & fluent API.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
     "homepage": "https://github.com/kennknowles/solidstate.js",
     "keywords": [
         "REST",
-        "Backbone",
         "State machine",
         "Knockout"
     ],
@@ -21,13 +20,12 @@
     "dependencies": {
         "amdefine": ">=0.1.0",
         "backbone": ">=1.1.0",
-        "contracts-js": ">=0.3.3",
         "knockout": ">=2.2",
         "requirejs": ">=2.0",
         "underscore":  ">=1.4",
         "URIjs": ">=1.10",
         "when": ">=2.0.1",
-        "zoetropic": ">=0.1.0"
+        "zoetropic": ">=0.1.1"
     },
     "devDependencies": {
         "chai": ">=1.5.0",
@@ -38,8 +36,8 @@
         "mocha-istanbul": ">=0.2.0",
         "sinon": ">=1.6.0"
     },
-    "files": ["src/solidstate.js"],
-    "main": "src/solidstate",
+    "files": ["lib/"],
+    "main": "lib/solidstate",
     "scripts": {
         "test": "make test"
     }
