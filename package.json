@@ -1,6 +1,6 @@
 {
     "name": "solidstate",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "An observable REST client for Javascript with a dramatically simple & fluent API.",
     "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
     "license": "Apache 2.0",
