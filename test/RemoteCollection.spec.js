@@ -32,7 +32,7 @@ define([
 
             var c = ss.RemoteCollection({ 
                 Backbone: MockBackbone,
-                uri: 'fake://uri'
+                uri: 'fake://uri',
             }).withFields({ data: data });
 
             expect(c.state()).to.equal('initial');

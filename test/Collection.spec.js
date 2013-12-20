@@ -55,7 +55,6 @@ define([
 
             expect(c.state()).to.equal("ready");
 
-            console.log(c2);
             expect(c2.state()).to.equal("ready");
             expect(c2.models().one.state()).to.equal("ready");
             expect(c2.models().one.attributes().foo()).to.equal(24);
