@@ -1,22 +1,18 @@
-/* jshint -W064 */
-/* jshint -W030 */
 if (typeof define !== 'function') { var define = require('amdefine')(module); }
 define([ 
-    //'contracts-js',
     'knockout',
     'underscore',
     'URIjs',
     'when',
     'zoetropic'
-], function(/*contracts,*/ ko, _, URI, when, z) {
+], function(ko, _, URI, when, z) {
     'use strict';
     
     //contracts.enabled(false);
 
     // Alias extremely common knockout functions.
     // Trust me, this actually improves readability.
-    var //C = contracts,
-        o = ko.observable,
+    var o = ko.observable,
         u = ko.utils.unwrapObservable,
         c = ko.computed,
         w = function(v) { return ko.isObservable(v) ? v : o(v); },

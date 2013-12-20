@@ -30,3 +30,6 @@ npm-debug.log
 # Vim
 \#*
 .\#*
+
+# Idea
+/.idea
