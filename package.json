@@ -1,8 +1,8 @@
 {
     "name": "solidstate",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "An observable REST client for Javascript with a dramatically simple & fluent API.",
-    "author": "Kenneth Knowles <kenn.knowles@gmail.com> (http://kennknowles.com)",
+    "author": "Arborbridge Engineering <engineering@arborbridge.com>",
     "license": "Apache 2.0",
     "homepage": "https://github.com/kennknowles/solidstate.js",
     "keywords": [
@@ -11,11 +11,11 @@
         "Knockout"
     ],
     "issues": {
-        "url": "https://github.com/kennknowles/solidstate.js/issues"
+        "url": "https://github.com/arborbridge/solidstate.js/issues"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/kennknowles/solidstate.js.git"
+        "url": "https://github.com/arborbridge/solidstate.js.git"
     },
     "dependencies": {
         "amdefine": ">=0.1.0",
@@ -25,7 +25,7 @@
         "underscore":  ">=1.4",
         "URIjs": ">=1.10",
         "when": ">=2.0.1",
-        "zoetropic": ">=0.1.1"
+        "zoetropic": ">=0.2.0"
     },
     "devDependencies": {
         "chai": ">=1.5.0",
