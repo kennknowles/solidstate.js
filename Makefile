@@ -28,7 +28,7 @@ jshint:
 
 .PHONY: test
 test: jshint
-	$(MOCHA) --reporter dot ./test/mocha-spec-runner.js
+	$(MOCHA) --reporter spec ./test/mocha-spec-runner.js
 
 .PHONY: coverage
 coverage: jshint lib-cov
